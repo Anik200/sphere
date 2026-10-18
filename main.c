@@ -508,33 +508,39 @@ int main(void) {
     } else {
         // Welcome voice greeting (spoken once on launch)
         audio_speak("Sphere AI online. Say Hey Sphere to activate.");
+        int start_in_listening = 0;
         while (app_running) {
             if (audio_check_exit_detected()) { handle_exit(); break; }
             int wake_retrigger = 0;
-            if (audio_check_interrupted(&wake_retrigger)) {
-                if (wake_retrigger) {
-                    renderer_set_state(STATE_LISTENING);
-                    renderer_set_status("Awake! Listening to your voice... (Speak now)");
-                    renderer_set_subtitle("Listening...");
-                    audio_set_listening_mode();
-                    break;
-                }
+            if (audio_check_interrupted(&wake_retrigger) || audio_check_wake_detected()) {
+                start_in_listening = 1;
+                audio_stop_speech();
                 break;
             }
             if (!audio_is_speaking()) break;
             if (_kbhit()) {
                 int c = _getch();
                 if (c == 27 || c == 'q' || c == 'Q') { handle_exit(); break; }
+                if (c == ' ' || c == 'w' || c == 'W' || c == 10 || c == 13) {
+                    start_in_listening = 1;
+                }
                 audio_stop_speech();
                 break;
             }
             platform_sleep(20);
         }
 
-        audio_set_standby_mode();
-        renderer_set_state(STATE_IDLE);
-        renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-        renderer_set_subtitle("Say \"Hey Sphere\" or press Space to wake me up! (Or say \"exit\")");
+        if (start_in_listening) {
+            renderer_set_state(STATE_LISTENING);
+            renderer_set_status("Awake! Listening to your voice... (Speak now)");
+            renderer_set_subtitle("Listening...");
+            audio_set_listening_mode();
+        } else {
+            audio_set_standby_mode();
+            renderer_set_state(STATE_IDLE);
+            renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
+            renderer_set_subtitle("Say \"Hey Sphere\" or press Space to wake me up! (Or say \"exit\")");
+        }
 
         char query_buf[512] = {0};
 

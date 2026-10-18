@@ -44,7 +44,7 @@ STOP_REGEX = re.compile(
     re.IGNORECASE
 )
 WAKE_REGEX = re.compile(
-    r"^(hey\s+sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere)(\s+(?P<q>.*))?$",
+    r"^(hey\s+sphere|sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere|okay\s+sphere|yo\s+sphere|hey\s+spear|spear|wake\s+up\s+sphere|wake\s+up|her\s+sphere|here\s+sphere|hey\s+fear|hey\s+spare|hay\s+sphere)(\s+(?P<q>.*))?$",
     re.IGNORECASE
 )
 
