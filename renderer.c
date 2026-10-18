@@ -32,10 +32,11 @@ static volatile AgentState previous_state = STATE_IDLE;
 static volatile float current_voice_amp = 0.0f;
 static volatile float current_angle = 0.0f;
 static volatile float current_morph = 0.0f;
-static volatile float music_phase = 0.0f;
 static volatile int happy_countdown = 0;
 static volatile BallExpression current_expression = EXPR_NONE;
 static volatile int expression_countdown = 0;
+static volatile float music_phase = 0.0f;
+static volatile float ripple_phase = 0.0f;
 static char custom_color[32] = "";
 
 static char current_status[128] = "Ready. Press Space to talk or type a prompt.";
@@ -279,13 +280,18 @@ void renderer_init(void) {
     }
     setup_expression_targets(EXPR_HAPPY);
 
-    // Restore saved custom base color from disk if exists
+    // Restore saved custom color if exists
     FILE *f_col = fopen("sphere_color.cfg", "r");
     if (f_col) {
-        if (fgets(custom_color, sizeof(custom_color), f_col)) {
-            size_t l = strlen(custom_color);
-            while (l > 0 && (custom_color[l - 1] == '\n' || custom_color[l - 1] == '\r')) {
-                custom_color[--l] = '\0';
+        char buf[64];
+        if (fgets(buf, sizeof(buf), f_col)) {
+            size_t l = strlen(buf);
+            while (l > 0 && (buf[l - 1] == '\n' || buf[l - 1] == '\r' || buf[l - 1] == ' ')) {
+                buf[--l] = '\0';
+            }
+            if (l > 0) {
+                strncpy(custom_color, buf, sizeof(custom_color) - 1);
+                custom_color[sizeof(custom_color) - 1] = '\0';
             }
         }
         fclose(f_col);
@@ -331,10 +337,10 @@ void renderer_set_custom_color(const char *ansi_color) {
     if (ansi_color && strlen(ansi_color) > 0) {
         strncpy(custom_color, ansi_color, sizeof(custom_color) - 1);
         custom_color[sizeof(custom_color) - 1] = '\0';
-        FILE *f = fopen("sphere_color.cfg", "w");
-        if (f) {
-            fprintf(f, "%s", custom_color);
-            fclose(f);
+        FILE *f_col = fopen("sphere_color.cfg", "w");
+        if (f_col) {
+            fprintf(f_col, "%s\n", custom_color);
+            fclose(f_col);
         }
     } else {
         custom_color[0] = '\0';
@@ -420,29 +426,33 @@ void renderer_render_frame(void) {
         if (sound_energy < speak_pulse) sound_energy = speak_pulse;
     } else if (state == STATE_MUSIC) {
         music_phase += 0.05f;
-        float beat = 0.20f + 0.12f * sinf(music_phase * 2.5f);
+        float beat = 0.18f + 0.10f * sinf(music_phase * 2.5f);
         if (sound_energy < beat) sound_energy = beat;
     }
 
-    // Dynamic rotation angle: accelerates dynamically with voice input, speech rhythm or thinking
-    // Ball MUST NOT spin during music playback!
-    float rotation_speed = 0.035f;
-    if (state == STATE_MUSIC) {
-        rotation_speed = 0.0f; // User explicit: Ball must NOT spin during music playback!
-    } else if (sound_energy > 0.03f) {
-        rotation_speed += sound_energy * 0.28f; // Dynamic energetic swirl with sound!
+    // Dynamic rotation angle:
+    // The ball ONLY spins when NOT speaking and NOT listening!
+    // Otherwise it stays completely still (zero spin) and only ripples!
+    float rotation_speed = 0.035f; // Normal idle rotation
+    if (state == STATE_SPEAKING || state == STATE_LISTENING || state == STATE_MUSIC) {
+        rotation_speed = 0.0f; // Stays completely still, zero spin!
     } else if (state == STATE_THINKING) {
-        rotation_speed += 0.09f;
+        rotation_speed = 0.09f; // Thinking animation
     }
     current_angle += rotation_speed;
+
+    // Advance independent ripple phase so fluid surface ripples animate even when ball stays still
+    if (state == STATE_SPEAKING || state == STATE_LISTENING || sound_energy > 0.02f) {
+        ripple_phase += 0.14f;
+    }
 
     float angle = current_angle;
     float morph = current_morph;
 
-    // Dynamic base scale: expands and breathes gently with vocal amplitude or music
+    // Dynamic base scale: expands and breathes with vocal amplitude or music
     float base_scale = (PIX_H * 0.36f);
     if (state == STATE_MUSIC) {
-        base_scale *= (1.0f + sound_energy * 0.06f); // Gentle, subtle breathing pulse (no overreaction)
+        base_scale *= (1.0f + sound_energy * 0.05f); // Gentle 5% breathing during music
     } else if (sound_energy > 0.03f) {
         base_scale *= (1.0f + sound_energy * 0.16f); // 16% breathing expansion
     } else if (state == STATE_THINKING) {
@@ -464,22 +474,38 @@ void renderer_render_frame(void) {
         float ry = particles[i].sy * cos_pitch - rz * sin_pitch;
         rz       = particles[i].sy * sin_pitch + rz * cos_pitch;
 
+        // Dynamic fluid ripples and harmonic surface distortions
         if (state == STATE_MUSIC) {
-            // Elegant, calm musical surface ripples - subtle and smooth, zero chaotic tearing
-            float ripple = 1.0f + sinf(particles[i].sy * 3.5f + music_phase * 2.0f) * (sound_energy * 0.045f)
-                                + cosf(atan2f(particles[i].sz, particles[i].sx) * 2.0f + music_phase * 1.5f) * (sound_energy * 0.025f);
+            // Subtle, elegant harmonic surface ripples without chaotic tearing
+            float wave_lat = sinf(particles[i].sy * 4.0f + music_phase * 2.0f) * (sound_energy * 0.04f);
+            float theta = atan2f(particles[i].sz, particles[i].sx);
+            float wave_lon = cosf(theta * 2.0f + music_phase * 1.5f) * (sound_energy * 0.02f);
+            float ripple = 1.0f + wave_lat + wave_lon;
             rx *= ripple;
-            ry *= (1.0f + sinf(particles[i].sy * 2.5f + music_phase * 1.8f) * (sound_energy * 0.025f));
+            ry *= (1.0f + wave_lat * 0.5f);
             rz *= ripple;
         } else if (sound_energy > 0.02f) {
-            // Normal voice speech ripples and gentle repelling
-            float wave_lat = sinf(particles[i].sy * 6.0f - angle * 4.0f) * (sound_energy * 0.14f);
+            // 1. Traveling latitude ripple wave (undulating from equator to poles)
+            float wave_lat = sinf(particles[i].sy * 7.0f - ripple_phase * 2.2f) * (sound_energy * 0.18f);
+
+            // 2. Traveling longitude / azimuthal swirling distortion
             float theta = atan2f(particles[i].sz, particles[i].sx);
-            float wave_lon = cosf(theta * 3.0f + angle * 3.0f) * (sound_energy * 0.10f);
-            float repel = 1.0f + wave_lat + wave_lon + (sound_energy * 0.08f);
-            rx *= repel;
-            ry *= (1.0f + wave_lat * 0.5f);
-            rz *= repel;
+            float wave_lon = cosf(theta * 3.0f + ripple_phase * 1.8f) * (sound_energy * 0.14f);
+
+            // 3. High-frequency acoustic ripple shockwaves radiating across the surface
+            float radial_dist = particles[i].sx * particles[i].sx + particles[i].sz * particles[i].sz;
+            float wave_shock = sinf(radial_dist * 9.0f - ripple_phase * 2.8f) * (sound_energy * 0.14f);
+
+            // 4. Acoustic particle repulsion (repels particles outward along their 3D normal vector)
+            float repel_force = sound_energy * 0.14f;
+            float repel_band = sinf(particles[i].sy * 5.0f + ripple_phase * 1.5f) * (sound_energy * 0.10f);
+
+            // Combined dynamic ripple and outward repulsion
+            float ripple_repel = 1.0f + wave_lat + wave_lon + wave_shock + repel_force + repel_band;
+
+            rx *= ripple_repel;
+            ry *= (1.0f + wave_lat * 0.60f + sound_energy * 0.10f + repel_band);
+            rz *= ripple_repel;
         }
 
         // Interpolate between 3D sphere and target expression
@@ -494,7 +520,8 @@ void renderer_render_frame(void) {
         set_subpixel(px, py);
     }
 
-    // Determine state color: Dynamic state colors take precedence; custom color sets base/idle/speaking color
+    // Determine state color: expressions & dynamic state colors take priority,
+    // custom color applies to base/idle/speaking states!
     const char *state_color;
     if (morph > 0.35f) {
         switch (current_expression) {
@@ -508,12 +535,20 @@ void renderer_render_frame(void) {
         }
     } else {
         switch (state) {
-            case STATE_LISTENING: state_color = COLOR_PURPLE; break;
-            case STATE_THINKING:  state_color = COLOR_CYAN; break;
-            case STATE_MUSIC:     state_color = (custom_color[0] != '\0' ? custom_color : COLOR_CYAN); break;
+            case STATE_LISTENING:
+                state_color = COLOR_PURPLE; // Always show purple when listening!
+                break;
+            case STATE_THINKING:
+                state_color = COLOR_CYAN;   // Always show cyan when searching/thinking!
+                break;
+            case STATE_MUSIC:
+                state_color = (custom_color[0] != '\0') ? custom_color : COLOR_CYAN;
+                break;
             case STATE_SPEAKING:
             case STATE_IDLE:
-            default:              state_color = (custom_color[0] != '\0' ? custom_color : COLOR_GREEN); break;
+            default:
+                state_color = (custom_color[0] != '\0') ? custom_color : COLOR_GREEN;
+                break;
         }
     }
 

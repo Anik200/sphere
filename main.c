@@ -14,16 +14,62 @@
 #include <windows.h>
 #include <conio.h>
 #include <io.h>
+#define platform_sleep(ms) Sleep(ms)
 #else
+#define _GNU_SOURCE
 #include <unistd.h>
 #include <pthread.h>
+#include <termios.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <signal.h>
+#define platform_sleep(ms) usleep((ms) * 1000)
+
+static struct termios orig_termios;
+static int termios_raw_set = 0;
+
+static void disable_raw_mode(void) {
+    if (termios_raw_set) {
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+        termios_raw_set = 0;
+    }
+}
+
+static void enable_raw_mode(void) {
+    if (!isatty(STDIN_FILENO)) return;
+    if (!termios_raw_set) {
+        if (tcgetattr(STDIN_FILENO, &orig_termios) == 0) {
+            atexit(disable_raw_mode);
+            struct termios raw = orig_termios;
+            raw.c_lflag &= ~(ECHO | ICANON);
+            raw.c_cc[VMIN] = 0;
+            raw.c_cc[VTIME] = 0;
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+            termios_raw_set = 1;
+        }
+    }
+}
+
+static int _kbhit(void) {
+    struct timeval tv = {0, 0};
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(STDIN_FILENO, &fds);
+    return select(STDIN_FILENO + 1, &fds, NULL, NULL, &tv) > 0;
+}
+
+static int _getch(void) {
+    unsigned char c = 0;
+    if (read(STDIN_FILENO, &c, 1) > 0) return (int)c;
+    return -1;
+}
 #endif
 
 static volatile int app_running = 1;
 
-#ifdef _WIN32
 static void handle_exit(void);
 
+#ifdef _WIN32
 static BOOL WINAPI console_ctrl_handler(DWORD fdwCtrlType) {
     switch (fdwCtrlType) {
         case CTRL_C_EVENT:
@@ -49,6 +95,26 @@ static DWORD WINAPI render_loop_thread(LPVOID lpParam) {
         Sleep(FRAME_DELAY_MS);
     }
     return 0;
+}
+#else
+static void posix_signal_handler(int sig) {
+    (void)sig;
+    disable_raw_mode();
+    handle_exit();
+}
+
+static pthread_t hRenderThread;
+static int render_thread_started = 0;
+
+static void *render_loop_thread(void *lpParam) {
+    (void)lpParam;
+    while (app_running) {
+        float amp = audio_get_current_amp();
+        renderer_set_voice_amp(amp);
+        renderer_render_frame();
+        usleep(FRAME_DELAY_MS * 1000);
+    }
+    return NULL;
 }
 #endif
 
@@ -76,13 +142,18 @@ static void handle_exit(void) {
     if (already_exiting) return;
     already_exiting = 1;
 
+#ifndef _WIN32
+    disable_raw_mode();
+#endif
+
+    audio_stop_music();
     renderer_set_state(STATE_SPEAKING);
     renderer_set_status("Exiting SphereAI...");
-    renderer_set_subtitle("Sphere: Good bye, see you.");
-    audio_speak("Good bye, see you.");
-    int wait_count = 70; // up to 3.5s for complete speech
+    renderer_set_subtitle("Sphere: see you later, bye");
+    audio_speak_exit("see you later, bye");
+    int wait_count = 80; // up to 4s for complete speech
     while (audio_is_speaking() && --wait_count > 0) {
-        Sleep(50);
+        platform_sleep(50);
     }
     audio_stop_speech();
     app_running = 0;
@@ -105,33 +176,39 @@ static int is_exit_command(const char *lower) {
     while (len > 0 && (clean[len - 1] == '.' || clean[len - 1] == '?' || clean[len - 1] == '!' || clean[len - 1] == ' ' || clean[len - 1] == '"' || clean[len - 1] == '\'')) {
         clean[--len] = '\0';
     }
-    return (strcmp(clean, "exit") == 0 ||
-            strcmp(clean, "quit") == 0 ||
-            strcmp(clean, "close") == 0 ||
-            strcmp(clean, "goodbye") == 0 ||
-            strcmp(clean, "good bye") == 0 ||
-            strcmp(clean, "bye") == 0 ||
-            strcmp(clean, "bye bye") == 0 ||
-            strcmp(clean, "see you") == 0 ||
-            strcmp(clean, "see ya") == 0 ||
-            strcmp(clean, "shutdown") == 0 ||
-            strcmp(clean, "shut down") == 0 ||
-            strcmp(clean, "close app") == 0 ||
-            strcmp(clean, "exit app") == 0 ||
-            strcmp(clean, "quit app") == 0 ||
-            strstr(clean, "exit") != NULL ||
-            strstr(clean, "quit") != NULL ||
-            strstr(clean, "goodbye") != NULL ||
-            strstr(clean, "good bye") != NULL ||
-            strstr(clean, "see you") != NULL ||
-            strstr(clean, "bye") != NULL ||
-            strstr(clean, "shutdown") != NULL ||
-            strstr(clean, "shut down") != NULL ||
-            strstr(clean, "close app") != NULL ||
-            strstr(clean, "turn off") != NULL ||
-            strstr(clean, "terminate") != NULL ||
-            strstr(clean, "stop listening") != NULL ||
-            strstr(clean, "go to sleep") != NULL);
+    const char *p = clean;
+    while (*p && (isspace((unsigned char)*p) || *p == '"' || *p == '\'')) p++;
+
+    if (strncmp(p, "hey sphere ", 11) == 0) p += 11;
+    else if (strncmp(p, "hi sphere ", 10) == 0) p += 10;
+    else if (strncmp(p, "hello sphere ", 13) == 0) p += 13;
+    else if (strncmp(p, "sphere ", 7) == 0) p += 7;
+
+    while (*p && isspace((unsigned char)*p)) p++;
+    if (strncmp(p, "please ", 7) == 0) p += 7;
+    while (*p && isspace((unsigned char)*p)) p++;
+
+    return (strcmp(p, "exit") == 0 ||
+            strcmp(p, "quit") == 0 ||
+            strcmp(p, "close") == 0 ||
+            strcmp(p, "goodbye") == 0 ||
+            strcmp(p, "good bye") == 0 ||
+            strcmp(p, "bye") == 0 ||
+            strcmp(p, "bye bye") == 0 ||
+            strcmp(p, "see you") == 0 ||
+            strcmp(p, "see ya") == 0 ||
+            strcmp(p, "see you later") == 0 ||
+            strcmp(p, "shutdown") == 0 ||
+            strcmp(p, "shut down") == 0 ||
+            strcmp(p, "close app") == 0 ||
+            strcmp(p, "close the app") == 0 ||
+            strcmp(p, "exit app") == 0 ||
+            strcmp(p, "exit the app") == 0 ||
+            strcmp(p, "quit app") == 0 ||
+            strcmp(p, "turn off") == 0 ||
+            strcmp(p, "terminate") == 0 ||
+            strcmp(p, "stop listening") == 0 ||
+            strcmp(p, "go to sleep") == 0);
 }
 
 static int is_stop_command(const char *lower) {
@@ -186,14 +263,16 @@ static void handle_user_query(const char *raw_query) {
         return;
     }
 
-    // Music playback check: search and stream music preview dynamically
-    MusicTrack track;
-    if (agent_is_music_request(query, &track)) {
-        if (track.found) {
-            renderer_set_state(STATE_THINKING);
-            renderer_set_status("Loading full song...");
+    // Music playback check: search and stream whole songs dynamically
+    if (agent_has_music_intent(query)) {
+        renderer_set_state(STATE_THINKING);
+        renderer_set_status("Searching for full song...");
+        renderer_set_subtitle("Finding full track...");
+
+        MusicTrack track;
+        if (agent_is_music_request(query, &track) && track.found) {
             char sub_load[512];
-            snprintf(sub_load, sizeof(sub_load), "Loading: \"%s\" by %s", track.track_name, track.artist_name);
+            snprintf(sub_load, sizeof(sub_load), "Found: \"%s\" by %s", track.track_name, track.artist_name);
             renderer_set_subtitle(sub_load);
 
             char announce[512];
@@ -217,24 +296,22 @@ static void handle_user_query(const char *raw_query) {
                     renderer_set_state(STATE_IDLE);
                     return;
                 }
-#ifdef _WIN32
                 if (_kbhit()) {
                     int c = _getch();
-                    if (c == 27) { handle_exit(); return; }
+                    if (c == 27 || c == 'q' || c == 'Q') { handle_exit(); return; }
                     audio_stop_speech();
                     break;
                 }
-                Sleep(20);
-#endif
+                platform_sleep(20);
             }
 
             // Transition to Dynamic Music Visualizer State!
             renderer_set_state(STATE_MUSIC);
             char status_music[256];
-            snprintf(status_music, sizeof(status_music), "Visualizing Music | %s - %s", track.track_name, track.artist_name);
+            snprintf(status_music, sizeof(status_music), "Playing Full Song | %s - %s", track.track_name, track.artist_name);
             renderer_set_status(status_music);
             char sub_music[512];
-            snprintf(sub_music, sizeof(sub_music), "Playing full track: \"%s\" by %s (Say \"stop\" or \"Hey Sphere\" to interrupt)",
+            snprintf(sub_music, sizeof(sub_music), "Playing: \"%s\" by %s (Say \"stop\" or \"Hey Sphere\" to interrupt)",
                      track.track_name, track.artist_name);
             renderer_set_subtitle(sub_music);
 
@@ -258,17 +335,13 @@ static void handle_user_query(const char *raw_query) {
                     }
                     break;
                 }
-#ifdef _WIN32
                 if (_kbhit()) {
                     int c = _getch();
-                    if (c == 27) { handle_exit(); return; }
+                    if (c == 27 || c == 'q' || c == 'Q') { handle_exit(); return; }
                     audio_stop_music();
                     break;
                 }
-                Sleep(25);
-#else
-                usleep(25000);
-#endif
+                platform_sleep(25);
             }
 
             audio_stop_music();
@@ -295,15 +368,13 @@ static void handle_user_query(const char *raw_query) {
                     }
                     break;
                 }
-#ifdef _WIN32
                 if (_kbhit()) {
                     int c = _getch();
-                    if (c == 27) { handle_exit(); return; }
+                    if (c == 27 || c == 'q' || c == 'Q') { handle_exit(); return; }
                     audio_stop_speech();
                     break;
                 }
-                Sleep(20);
-#endif
+                platform_sleep(20);
             }
             audio_set_standby_mode();
             renderer_set_state(STATE_IDLE);
@@ -312,49 +383,7 @@ static void handle_user_query(const char *raw_query) {
         }
     }
 
-    // Happy trigger
-    if (strcmp(lower_query, "happy") == 0 || strcmp(lower_query, "smile") == 0) {
-        renderer_set_status("Feeling joyful! Morphing happy face...");
-        renderer_set_subtitle("Joyful smile! Look at my happy face!");
-        renderer_trigger_happy();
-        renderer_set_state(STATE_SPEAKING);
-        audio_speak("I am feeling joyful! Look at my smiling face!");
-        while (app_running) {
-            if (audio_check_exit_detected()) {
-                handle_exit();
-                return;
-            }
-            int wake_retrigger = 0;
-            if (audio_check_interrupted(&wake_retrigger)) {
-                if (wake_retrigger) {
-                    renderer_set_state(STATE_LISTENING);
-                    renderer_set_status("Awake! Listening to your voice... (Speak now)");
-                    renderer_set_subtitle("Listening...");
-                    audio_set_listening_mode();
-                    return;
-                }
-                break;
-            }
-            if (!audio_is_speaking()) {
-                break;
-            }
-#ifdef _WIN32
-            if (_kbhit()) {
-                int c = _getch();
-                if (c == 27) { handle_exit(); return; }
-                audio_stop_speech();
-                break;
-            }
-            Sleep(20);
-#else
-            usleep(20000);
-#endif
-        }
-        audio_set_standby_mode();
-        renderer_set_state(STATE_IDLE);
-        renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-        return;
-    }
+
 
     // Transition to Thinking / Web Searching state (Cyan ball revolving fast)
     renderer_set_state(STATE_THINKING);
@@ -378,9 +407,6 @@ static void handle_user_query(const char *raw_query) {
     if (is_happy) {
         renderer_set_status("Feeling joyful! Morphing happy face...");
         renderer_trigger_happy();
-#ifdef _WIN32
-        Sleep(1200); // Allow happy face morph animation to show
-#endif
     }
 
     // Transition to Speaking state (Green ball revolving while answering)
@@ -416,10 +442,9 @@ static void handle_user_query(const char *raw_query) {
             break;
         }
 
-#ifdef _WIN32
         if (_kbhit()) {
             int c = _getch();
-            if (c == 27) { // Esc
+            if (c == 27 || c == 'q' || c == 'Q') { // Esc or q
                 handle_exit();
                 return;
             }
@@ -427,10 +452,7 @@ static void handle_user_query(const char *raw_query) {
             audio_stop_speech();
             break;
         }
-        Sleep(20);
-#else
-        usleep(20000);
-#endif
+        platform_sleep(20);
     }
 
     // After speaking finishes, return to standby mode
@@ -442,6 +464,10 @@ static void handle_user_query(const char *raw_query) {
 int main(void) {
 #ifdef _WIN32
     SetConsoleCtrlHandler(console_ctrl_handler, TRUE);
+#else
+    signal(SIGINT, posix_signal_handler);
+    signal(SIGTERM, posix_signal_handler);
+    enable_raw_mode();
 #endif
     renderer_init();
     audio_init();
@@ -449,15 +475,20 @@ int main(void) {
 
 #ifdef _WIN32
     hRenderThread = CreateThread(NULL, 0, render_loop_thread, NULL, 0, NULL);
+#else
+    pthread_create(&hRenderThread, NULL, render_loop_thread, NULL);
+    render_thread_started = 1;
 #endif
 
     renderer_set_state(STATE_IDLE);
     renderer_set_status("Standby | Say \"Hey Sphere\" to wake me up!");
-    renderer_set_subtitle("Say \"Hey Sphere\" to activate (or say \"exit\" to quit)");
+    renderer_set_subtitle("Say \"Hey Sphere\" or press Space to activate | 'q' or 'exit' to quit");
 
     int is_pipe = 0;
 #ifdef _WIN32
     is_pipe = !_isatty(_fileno(stdin));
+#else
+    is_pipe = !isatty(STDIN_FILENO);
 #endif
 
     if (is_pipe) {
@@ -491,23 +522,19 @@ int main(void) {
                 break;
             }
             if (!audio_is_speaking()) break;
-#ifdef _WIN32
             if (_kbhit()) {
                 int c = _getch();
-                if (c == 27) { handle_exit(); break; }
+                if (c == 27 || c == 'q' || c == 'Q') { handle_exit(); break; }
                 audio_stop_speech();
                 break;
             }
-            Sleep(20);
-#else
-            usleep(20000);
-#endif
+            platform_sleep(20);
         }
 
         audio_set_standby_mode();
         renderer_set_state(STATE_IDLE);
         renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-        renderer_set_subtitle("Say \"Hey Sphere\" to wake me up! (Or say \"exit\")");
+        renderer_set_subtitle("Say \"Hey Sphere\" or press Space to wake me up! (Or say \"exit\")");
 
         char query_buf[512] = {0};
 
@@ -519,15 +546,20 @@ int main(void) {
             }
 
             // Keyboard check
-#ifdef _WIN32
             if (_kbhit()) {
                 int c = _getch();
-                if (c == 27) { // ESC
+                if (c == 27 || c == 'q' || c == 'Q') { // ESC or q
                     handle_exit();
                     break;
                 }
+                if (c == ' ' || c == 'w' || c == 'W' || c == 10 || c == 13) {
+                    // Space or Enter wakes the sphere into listening!
+                    renderer_set_state(STATE_LISTENING);
+                    renderer_set_status("Awake! Listening to your voice... (Speak now)");
+                    renderer_set_subtitle("Listening...");
+                    audio_set_listening_mode();
+                }
             }
-#endif
 
             // Check if awake or wake word triggered
             if (audio_check_wake_detected() || renderer_get_state() == STATE_LISTENING) {
@@ -545,12 +577,15 @@ int main(void) {
 
                 // Active listening wait loop
                 while (app_running && renderer_get_state() == STATE_LISTENING) {
-#ifdef _WIN32
                     if (_kbhit()) {
                         int c = _getch();
-                        if (c == 27) { handle_exit(); break; }
+                        if (c == 27 || c == 'q' || c == 'Q') { handle_exit(); break; }
+                        if (c == 10 || c == 13) {
+                            renderer_set_state(STATE_IDLE);
+                            audio_set_standby_mode();
+                            break;
+                        }
                     }
-#endif
                     if (audio_check_exit_detected()) {
                         handle_exit();
                         break;
@@ -574,11 +609,11 @@ int main(void) {
                         break;
                     }
 
-                    Sleep(30);
+                    platform_sleep(30);
                 }
             }
 
-            Sleep(30);
+            platform_sleep(30);
         }
     }
 
@@ -588,6 +623,11 @@ int main(void) {
         WaitForSingleObject(hRenderThread, 1000);
         CloseHandle(hRenderThread);
     }
+#else
+    if (render_thread_started) {
+        pthread_join(hRenderThread, NULL);
+    }
+    disable_raw_mode();
 #endif
 
     audio_cleanup();

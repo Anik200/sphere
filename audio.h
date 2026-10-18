@@ -28,6 +28,7 @@ float audio_get_current_amp(void);
 
 // Speech synthesis with word-by-word streaming
 void audio_speak(const char *text);
+void audio_speak_exit(const char *text);
 void audio_stop_speech(void);
 int audio_is_speaking(void);
 

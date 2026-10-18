@@ -21,7 +21,8 @@ typedef struct {
     char track_name[256];
     char artist_name[256];
     char collection_name[256];
-    char preview_url[1024];
+    char preview_url[4096];
+    int duration;
     int found;
 } MusicTrack;
 

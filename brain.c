@@ -611,25 +611,104 @@ static int brain_handle_customization_and_personality(const char *lower, char *o
         }
     }
 
-    // 3. 3D Facial Expression Requests
-    if (contains(lower, "angry face") || contains(lower, "mad face") || contains(lower, "look angry") ||
-        contains(lower, "make an angry face") || contains(lower, "show angry") || contains(lower, "show me an angry face")) {
+    // 3. Random Humorous Jokes & Laughing
+    if (contains(lower, "joke") || contains(lower, "tell me a joke") || contains(lower, "random joke") ||
+        contains(lower, "drop a joke") || contains(lower, "another joke") || contains(lower, "tell a joke") ||
+        contains(lower, "funny joke") || contains(lower, "tell me jokes") || contains(lower, "give me a joke") ||
+        contains(lower, "drop random jokes") || contains(lower, "drop jokes")) {
+        static int seeded = 0;
+        if (!seeded) {
+            srand((unsigned int)time(NULL) ^ (unsigned int)clock());
+            seeded = 1;
+        }
+        static int last_joke_index = -1;
+        static const char *JOKES[] = {
+            "Why do programmers prefer dark mode? Because light attracts bugs!",
+            "Why did the spider cross the computer? To get to his web site!",
+            "There are only 10 types of people in the world: those who understand binary, and those who don't!",
+            "Why don't scientists trust atoms? Because they make up everything!",
+            "What do you call a fake noodle? An impasta!",
+            "Why was the math book sad? Because it had too many problems!",
+            "Why do we tell actors to break a leg? Because every play has a cast!",
+            "How does a penguin build its house? Igloos it together!",
+            "What do you call an alligator in a vest? An investigator!",
+            "Why did the computer squeak? Someone stepped on its mouse!",
+            "Why can't bicycles stand up by themselves? Because they are two-tired!",
+            "What do you call a sleeping dinosaur? A dino-snore!",
+            "Why did the scarecrow win an award? Because he was outstanding in his field!",
+            "What do you call a factory that makes okay products? A satisfactory!",
+            "Why do Java developers wear glasses? Because they don't C-sharp!",
+            "What is the best thing about Switzerland? I don't know, but the flag is a big plus!",
+            "How do trees access the internet? They log on!",
+            "What did the zero say to the eight? Nice belt!",
+            "Why did the cookie go to the hospital? Because it felt crummy!",
+            "How do you organize a space party? You planet!",
+            "Why did the gym close down? It just didn't work out!",
+            "What do you call cheese that isn't yours? Nacho cheese!",
+            "Why did the golfer bring two pairs of pants? In case he got a hole in one!",
+            "What do you call a bear with no teeth? A gummy bear!",
+            "Why did the tomato blush? Because it saw the salad dressing!",
+            "What kind of tea is hard to swallow? Reality!"
+        };
+        int num_jokes = sizeof(JOKES) / sizeof(JOKES[0]);
+        int idx = rand() % num_jokes;
+        if (num_jokes > 1 && idx == last_joke_index) {
+            idx = (idx + 1) % num_jokes;
+        }
+        last_joke_index = idx;
+
+        static const char *LAUGHS[] = {
+            "Hahaha! Ha ha! Oh that cracks me up! Haha!",
+            "Hehehe! Hahaha! That one always gets me! Ah, so good!",
+            "Haha! Bwahaha! Oh man, that's hilarious! Haha!",
+            "Hahaha! Hehe! Classic! I can't stop laughing! Haha!",
+            "Ha ha ha! Hahaha! Oh that is priceless! Hehehe!"
+        };
+        int num_laughs = sizeof(LAUGHS) / sizeof(LAUGHS[0]);
+        int l_idx = rand() % num_laughs;
+
+        renderer_set_expression(EXPR_HAPPY);
+        if (out_is_happy) *out_is_happy = 1;
+        snprintf(out_response, max_len, "%s %s Would you like to hear another one?", JOKES[idx], LAUGHS[l_idx]);
+        return 1;
+    }
+
+    // 4. 3D Facial Expression Commands: cry, laugh, smile, angry, etc.
+    if (contains(lower, "angry") || contains(lower, "mad") || contains(lower, "furious") ||
+        contains(lower, "rage") || contains(lower, "look mad") || contains(lower, "be mad")) {
         renderer_set_expression(EXPR_ANGRY);
-        snprintf(out_response, max_len, "Grrr! Fierce V-shaped eyebrows and a clenched jaw! Look at my intense angry face! Don't mess with Sphere AI!");
+        snprintf(out_response, max_len, "Grrr! Fierce V-shaped eyebrows and an intense crimson red glow! Look at my angry face! Don't mess with Sphere AI!");
         return 1;
     }
 
-    if (contains(lower, "sad face") || contains(lower, "frown face") || contains(lower, "look sad") ||
-        contains(lower, "make a sad face") || contains(lower, "show sad") || contains(lower, "show me a sad face") ||
-        contains(lower, "show a sad face") || contains(lower, "show me a frown")) {
+    if (contains(lower, "cry") || contains(lower, "crying") || contains(lower, "sob") || contains(lower, "sobbing") ||
+        contains(lower, "sad face") || contains(lower, "look sad") || contains(lower, "make a sad face") ||
+        contains(lower, "show sad") || contains(lower, "frown") || strcmp(lower, "sad") == 0) {
         renderer_set_expression(EXPR_SAD);
-        snprintf(out_response, max_len, "Here is a sad expression with drooping eyebrows and a frown. Don't worry, I'm right here to keep you company and cheer you up!");
+        snprintf(out_response, max_len, "Boo-hoo! My particle sphere has morphed into a sad crying face with drooping eyes and tears. Don't worry, tears won't rust my circuits! But look at my sorrowful face!");
         return 1;
     }
 
-    if (contains(lower, "surprised face") || contains(lower, "surprise face") || contains(lower, "look surprised") ||
-        contains(lower, "shocked face") || contains(lower, "show surprised") || contains(lower, "show me a surprised face") ||
-        contains(lower, "show a surprised face")) {
+    if (contains(lower, "laaugh") || contains(lower, "laugh") || contains(lower, "laughing") ||
+        contains(lower, "burst out laughing") || contains(lower, "make me laugh") ||
+        contains(lower, "start laughing") || contains(lower, "laugh for me") ||
+        contains(lower, "can you laugh") || contains(lower, "can you laaugh")) {
+        renderer_set_expression(EXPR_HAPPY);
+        if (out_is_happy) *out_is_happy = 1;
+        snprintf(out_response, max_len, "Hahaha! Hehehe! Oh that is so funny! Hahaha! Ha ha ha! Look at my laughing face beaming with pure joy!");
+        return 1;
+    }
+
+    if (contains(lower, "smile") || contains(lower, "smiling") || contains(lower, "happy") ||
+        contains(lower, "smile for me") || contains(lower, "give me a smile") ||
+        contains(lower, "happy face") || contains(lower, "show smile") || contains(lower, "can you smile")) {
+        renderer_set_expression(EXPR_HAPPY);
+        if (out_is_happy) *out_is_happy = 1;
+        snprintf(out_response, max_len, "Here is a big radiant smile! My 3D particle sphere has morphed into a warm, happy smiling face for you! Feeling happy and bright!");
+        return 1;
+    }
+
+    if (contains(lower, "surprised") || contains(lower, "surprise") || contains(lower, "shocked")) {
         renderer_set_expression(EXPR_SURPRISED);
         snprintf(out_response, max_len, "Whoa! Look at my wide astonished eyes and raised eyebrows! Total amazement!");
         return 1;
@@ -649,52 +728,11 @@ static int brain_handle_customization_and_personality(const char *lower, char *o
         return 1;
     }
 
-    if (contains(lower, "happy face") || contains(lower, "smile face") || contains(lower, "smiling face") ||
-        contains(lower, "smile for me") || contains(lower, "show me a smile") || contains(lower, "show happy") ||
-        contains(lower, "make a happy face") || contains(lower, "show me a happy face")) {
-        renderer_set_expression(EXPR_HAPPY);
-        if (out_is_happy) *out_is_happy = 1;
-        snprintf(out_response, max_len, "Here is a big radiant smile! My 3D particle sphere has morphed into a happy smiling face!");
-        return 1;
-    }
-
     if (contains(lower, "neutral face") || contains(lower, "normal face") || contains(lower, "reset face") ||
         contains(lower, "sphere face") || contains(lower, "default face") || contains(lower, "reset expression") ||
         contains(lower, "clear expression")) {
         renderer_set_expression(EXPR_NONE);
         snprintf(out_response, max_len, "Returning smoothly back to my revolving 3D particle sphere!");
-        return 1;
-    }
-
-    // 4. Rotating Humorous Jokes
-    if (contains(lower, "joke") || contains(lower, "tell me a joke") || contains(lower, "funny") ||
-        contains(lower, "make me laugh") || contains(lower, "another joke") || contains(lower, "tell a joke")) {
-        static int joke_index = 0;
-        static const char *JOKES[] = {
-            "Why do programmers prefer dark mode? Because light attracts bugs!",
-            "Why did the spider cross the computer? To get to his web site!",
-            "There are only 10 types of people in the world: those who understand binary, and those who don't!",
-            "Why don't scientists trust atoms? Because they make up everything!",
-            "What do you call a fake noodle? An impasta!",
-            "Why was the math book sad? Because it had too many problems!",
-            "Why do we tell actors to break a leg? Because every play has a cast!",
-            "How does a penguin build its house? Igloos it together!",
-            "What do you call an alligator in a vest? An investigator!",
-            "Why did the computer squeak? Someone stepped on its mouse!",
-            "Why can't bicycles stand up by themselves? Because they are two-tired!",
-            "What do you call a sleeping dinosaur? A dino-snore!",
-            "Why did the scarecrow win an award? Because he was outstanding in his field!",
-            "What do you call a factory that makes okay products? A satisfactory!",
-            "Why do Java developers wear glasses? Because they don't C-sharp!",
-            "What is the best thing about Switzerland? I don't know, but the flag is a big plus!"
-        };
-        int num_jokes = sizeof(JOKES) / sizeof(JOKES[0]);
-        const char *selected = JOKES[joke_index % num_jokes];
-        joke_index++;
-
-        renderer_set_expression(EXPR_HAPPY);
-        if (out_is_happy) *out_is_happy = 1;
-        snprintf(out_response, max_len, "%s Look at my smiling face! Would you like to hear another one?", selected);
         return 1;
     }
 
@@ -845,13 +883,7 @@ static int brain_handle_conversation(const char *lower, char *out_response, size
         return 1;
     }
 
-    // 6. Jokes
-    if (contains(lower, "joke") || contains(lower, "funny") || contains(lower, "laugh")) {
-        if (out_is_happy) *out_is_happy = 1;
-        snprintf(out_response, max_len,
-            "Why do programmers prefer dark mode? Because light attracts bugs! Look at my smiling face!");
-        return 1;
-    }
+
 
     return 0;
 }

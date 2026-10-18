@@ -1,0 +1,16 @@
+# Temporary and runtime files
+sphere_color.cfg
+sphere_music_*.json
+*.tmp
+*.o
+*.obj
+old.exe
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS metadata
+.DS_Store
+Thumbs.db

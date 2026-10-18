@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200809L
+#define _GNU_SOURCE
 #include "search.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +9,14 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <wininet.h>
+#define CURL_BIN "curl.exe"
+#define POPEN_FUNC _popen
+#define PCLOSE_FUNC _pclose
+#else
+#include <unistd.h>
+#define CURL_BIN "curl"
+#define POPEN_FUNC popen
+#define PCLOSE_FUNC pclose
 #endif
 
 // Safe URL encoder
@@ -855,11 +865,11 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
     // Step 1: OpenSearch for exact canonical encyclopedia title with identified User-Agent
     char open_cmd[2048];
     snprintf(open_cmd, sizeof(open_cmd),
-        "curl.exe -s -L -A \"SphereAI/2.0 (desktop-client; contact@sphere.internal)\" --connect-timeout 2 --max-time 4 "
+        "%s -s -L -A \"SphereAI/2.0 (desktop-client; contact@sphere.internal)\" --connect-timeout 2 --max-time 4 "
         "\"https://en.wikipedia.org/w/api.php?action=opensearch&search=%s&limit=1&namespace=0&format=json\"",
-        encoded_subj);
+        CURL_BIN, encoded_subj);
 
-    FILE *pipe = _popen(open_cmd, "r");
+    FILE *pipe = POPEN_FUNC(open_cmd, "r");
     if (pipe) {
         char *resp = (char *)malloc(16384);
         if (resp) {
@@ -872,17 +882,17 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
             }
             free(resp);
         }
-        _pclose(pipe);
+        PCLOSE_FUNC(pipe);
     }
 
     // Step 1b: If OpenSearch didn't find title, search via Wikipedia list=search
     if (!got_title) {
         char list_cmd[2048];
         snprintf(list_cmd, sizeof(list_cmd),
-            "curl.exe -s -L -A \"SphereAI/2.0 (desktop-client; contact@sphere.internal)\" --connect-timeout 2 --max-time 4 "
+            "%s -s -L -A \"SphereAI/2.0 (desktop-client; contact@sphere.internal)\" --connect-timeout 2 --max-time 4 "
             "\"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=%s&srlimit=3&format=json\"",
-            encoded_subj);
-        pipe = _popen(list_cmd, "r");
+            CURL_BIN, encoded_subj);
+        pipe = POPEN_FUNC(list_cmd, "r");
         if (pipe) {
             char *resp = (char *)malloc(32768);
             if (resp) {
@@ -897,7 +907,7 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
                 }
                 free(resp);
             }
-            _pclose(pipe);
+            PCLOSE_FUNC(pipe);
         }
     }
 
@@ -907,17 +917,17 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
         char enc_title[512];
         url_encode(canonical_title, enc_title, sizeof(enc_title));
         snprintf(fetch_cmd, sizeof(fetch_cmd),
-            "curl.exe -s -L -A \"SphereAI/2.0 (desktop-client; contact@sphere.internal)\" --connect-timeout 2 --max-time 4 "
+            "%s -s -L -A \"SphereAI/2.0 (desktop-client; contact@sphere.internal)\" --connect-timeout 2 --max-time 4 "
             "\"https://en.wikipedia.org/w/api.php?action=query&titles=%s&prop=extracts|pageimages&exintro=1&explaintext=1&piprop=original|thumbnail&redirects=1&format=json\"",
-            enc_title);
+            CURL_BIN, enc_title);
     } else {
         snprintf(fetch_cmd, sizeof(fetch_cmd),
-            "curl.exe -s -L -A \"SphereAI/2.0 (desktop-client; contact@sphere.internal)\" --connect-timeout 2 --max-time 4 "
+            "%s -s -L -A \"SphereAI/2.0 (desktop-client; contact@sphere.internal)\" --connect-timeout 2 --max-time 4 "
             "\"https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=%s&gsrlimit=1&prop=pageimages|extracts&exintro=1&explaintext=1&piprop=original|thumbnail&format=json\"",
-            encoded_subj);
+            CURL_BIN, encoded_subj);
     }
 
-    pipe = _popen(fetch_cmd, "r");
+    pipe = POPEN_FUNC(fetch_cmd, "r");
     if (pipe) {
         char *response = (char *)malloc(65536);
         if (response) {
@@ -928,7 +938,7 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
                 // If title was from fuzzy generator search, strictly verify relevance against the query
                 if (!got_title && !is_title_relevant(subject, out_result->title)) {
                     free(response);
-                    _pclose(pipe);
+                    PCLOSE_FUNC(pipe);
                     return search_offline_knowledge(subject, out_result);
                 }
 
@@ -943,7 +953,7 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
                 }
 
                 free(response);
-                _pclose(pipe);
+                PCLOSE_FUNC(pipe);
 
                 if (strlen(out_result->extract) > 15) {
                     return 1;
@@ -952,7 +962,7 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
                 free(response);
             }
         }
-        _pclose(pipe);
+        PCLOSE_FUNC(pipe);
     }
 
     // Step 3: Seamless offline fallback if online query didn't return a match
@@ -972,9 +982,12 @@ int search_music_track(const char *query, MusicTrack *out_track) {
 
     const char *p = lower_q;
     const char *prefixes[] = {
-        "hey sphere play the song ", "hey sphere play a song ", "hey sphere play song ", "hey sphere play me ", "hey sphere play track ", "hey sphere play ",
-        "sphere play the song ", "sphere play a song ", "sphere play song ", "sphere play me ", "sphere play track ", "sphere play ",
-        "play the song ", "play a song ", "play song ", "play me the song ", "play me a song ", "play me ", "play track ", "play music ", "play "
+        "hey sphere play the song ", "hey sphere play song ", "hey sphere play me the song ", "hey sphere play me ", "hey sphere play ",
+        "sphere play the song ", "sphere play song ", "sphere play me ", "sphere play ",
+        "can you play the song ", "can you play song ", "can you play a song ", "can you play me ", "can you play ",
+        "please play the song ", "please play song ", "please play me ", "please play ",
+        "could you play the song ", "could you play song ", "could you play ",
+        "play the song ", "play song ", "play a song ", "play me the song ", "play me ", "play track ", "play "
     };
     for (size_t i = 0; i < sizeof(prefixes)/sizeof(prefixes[0]); i++) {
         size_t len = strlen(prefixes[i]);
@@ -1001,103 +1014,144 @@ int search_music_track(const char *query, MusicTrack *out_track) {
         clean[sizeof(clean) - 1] = '\0';
     }
 
-    char temp_dir[MAX_PATH] = "C:\\Windows\\Temp\\";
-#ifdef _WIN32
-    GetTempPathA(MAX_PATH, temp_dir);
-#else
-    const char *t = getenv("TMPDIR");
-    if (!t) t = "/tmp/";
-    strncpy(temp_dir, t, sizeof(temp_dir) - 1);
-#endif
-    char song_path[MAX_PATH];
-    snprintf(song_path, sizeof(song_path), "%ssphere_song.m4a", temp_dir);
-
-    // Escape characters in search query
-    char safe_query[512];
-    size_t sq = 0;
-    for (size_t k = 0; clean[k] && sq + 2 < sizeof(safe_query); k++) {
-        if (clean[k] == '"' || clean[k] == '%' || clean[k] == '&' || clean[k] == '|' || clean[k] == '<' || clean[k] == '>') continue;
-        safe_query[sq++] = clean[k];
+    // Step 1: Search for full song audio stream using music_search.py
+    // Escape any quotes in clean string
+    char safe_clean[512];
+    size_t sc_len = 0;
+    for (size_t k = 0; clean[k] && sc_len + 2 < sizeof(safe_clean); k++) {
+        if (clean[k] == '"' || clean[k] == '\\') {
+            safe_clean[sc_len++] = ' ';
+        } else {
+            safe_clean[sc_len++] = clean[k];
+        }
     }
-    safe_query[sq] = '\0';
+    safe_clean[sc_len] = '\0';
+
+#ifdef _WIN32
+    char temp_dir[MAX_PATH];
+    GetTempPathA(MAX_PATH, temp_dir);
+    char res_file[MAX_PATH];
+    snprintf(res_file, sizeof(res_file), "%ssphere_music_%lu.json", temp_dir, GetCurrentProcessId());
+    DeleteFileA(res_file);
+
+    char py_cmd[MAX_PATH * 3];
+    snprintf(py_cmd, sizeof(py_cmd), "python music_search.py \"%s\" \"%s\"", safe_clean, res_file);
+
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+
+    if (CreateProcessA(NULL, py_cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, 15000);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+#else
+    const char *tmp = getenv("TMPDIR");
+    if (!tmp) tmp = "/tmp";
+    char res_file[512];
+    snprintf(res_file, sizeof(res_file), "%s/sphere_music_%d.json", tmp, (int)getpid());
+    unlink(res_file);
+
+    char py_cmd[1024];
+    snprintf(py_cmd, sizeof(py_cmd), "python3 music_search.py \"%s\" \"%s\" 2>/dev/null || python music_search.py \"%s\" \"%s\" 2>/dev/null", safe_clean, res_file, safe_clean, res_file);
+    int sys_ret = system(py_cmd);
+    (void)sys_ret;
+#endif
+
+    FILE *f = fopen(res_file, "rb");
+    if (f) {
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (sz > 10 && sz < 32768) {
+            char *json_buf = (char *)malloc(sz + 1);
+            if (json_buf) {
+                size_t rd = fread(json_buf, 1, sz, f);
+                json_buf[rd] = '\0';
+                if (strstr(json_buf, "\"found\": true") || strstr(json_buf, "\"found\":true")) {
+                    extract_json_field(json_buf, "url", out_track->preview_url, sizeof(out_track->preview_url));
+                    extract_json_field(json_buf, "track_name", out_track->track_name, sizeof(out_track->track_name));
+                    extract_json_field(json_buf, "artist_name", out_track->artist_name, sizeof(out_track->artist_name));
+
+                    char dur_str[32] = {0};
+                    if (extract_json_field(json_buf, "duration", dur_str, sizeof(dur_str))) {
+                        out_track->duration = atoi(dur_str);
+                    }
+
+                    if (strlen(out_track->preview_url) > 0) {
+                        out_track->found = 1;
+                        if (strlen(out_track->track_name) == 0) {
+                            snprintf(out_track->track_name, sizeof(out_track->track_name), "%s", clean);
+                        }
+                        if (strlen(out_track->artist_name) == 0) {
+                            snprintf(out_track->artist_name, sizeof(out_track->artist_name), "Featured Artist");
+                        }
+                        free(json_buf);
+                        fclose(f);
+#ifdef _WIN32
+                        DeleteFileA(res_file);
+#else
+                        unlink(res_file);
+#endif
+                        return 1;
+                    }
+                }
+                free(json_buf);
+            }
+        }
+        fclose(f);
+#ifdef _WIN32
+        DeleteFileA(res_file);
+#else
+        unlink(res_file);
+#endif
+    }
+
+    // Step 2: Fallback to iTunes API search
+    char encoded[512];
+    url_encode(clean, encoded, sizeof(encoded));
 
     char cmd[2048];
     snprintf(cmd, sizeof(cmd),
-        "yt-dlp.exe --print \"%%(title)s\" \"ytsearch1:%s audio\" -f \"ba[ext=m4a]/ba\" -o \"%s\" --no-playlist --no-warnings --force-overwrites",
-        safe_query, song_path);
+        "%s -s -L --connect-timeout 3 --max-time 5 "
+        "\"https://itunes.apple.com/search?term=%s&entity=song&limit=1\"",
+        CURL_BIN, encoded);
 
-    FILE *pipe = _popen(cmd, "r");
-    char raw_title[512] = {0};
-    if (pipe) {
-        if (fgets(raw_title, sizeof(raw_title), pipe)) {
-            size_t l = strlen(raw_title);
-            while (l > 0 && (raw_title[l-1] == '\n' || raw_title[l-1] == '\r')) {
-                raw_title[--l] = '\0';
-            }
-        }
-        _pclose(pipe);
-    }
+    FILE *pipe = POPEN_FUNC(cmd, "r");
+    if (!pipe) return 0;
 
-    // Verify downloaded full song file exists and has valid audio size (> 100 KB)
-    FILE *chk = fopen(song_path, "rb");
-    if (!chk) {
-        return 0;
-    }
-    fseek(chk, 0, SEEK_END);
-    long fsize = ftell(chk);
-    fclose(chk);
-
-    if (fsize < 100000) {
+    char *resp = (char *)malloc(32768);
+    if (!resp) {
+        PCLOSE_FUNC(pipe);
         return 0;
     }
 
-    strncpy(out_track->preview_url, song_path, sizeof(out_track->preview_url) - 1);
+    size_t bytes = fread(resp, 1, 32767, pipe);
+    resp[bytes] = '\0';
+    PCLOSE_FUNC(pipe);
 
-    if (strlen(raw_title) > 0) {
-        // Strip YouTube annotations in brackets or parentheses
-        char clean_title[512];
-        size_t c_idx = 0;
-        int in_paren = 0;
-        int in_brack = 0;
-        for (size_t i = 0; raw_title[i] && c_idx + 1 < sizeof(clean_title); i++) {
-            char ch = raw_title[i];
-            if (ch == '(') in_paren++;
-            else if (ch == ')') { if (in_paren > 0) in_paren--; }
-            else if (ch == '[') in_brack++;
-            else if (ch == ']') { if (in_brack > 0) in_brack--; }
-            else if (!in_paren && !in_brack) {
-                clean_title[c_idx++] = ch;
-            }
+    if (extract_json_field(resp, "previewUrl", out_track->preview_url, sizeof(out_track->preview_url))) {
+        extract_json_field(resp, "trackName", out_track->track_name, sizeof(out_track->track_name));
+        extract_json_field(resp, "artistName", out_track->artist_name, sizeof(out_track->artist_name));
+        extract_json_field(resp, "collectionName", out_track->collection_name, sizeof(out_track->collection_name));
+
+        if (strlen(out_track->track_name) == 0) {
+            snprintf(out_track->track_name, sizeof(out_track->track_name), "%s", clean);
         }
-        clean_title[c_idx] = '\0';
-
-        while (c_idx > 0 && (clean_title[c_idx-1] == ' ' || clean_title[c_idx-1] == '-' || clean_title[c_idx-1] == '_')) {
-            clean_title[--c_idx] = '\0';
+        if (strlen(out_track->artist_name) == 0) {
+            snprintf(out_track->artist_name, sizeof(out_track->artist_name), "Featured Artist");
         }
 
-        // Check for artist separator: " - " or en-dash/em-dash
-        char *sep = strstr(clean_title, " - ");
-        if (!sep) sep = strstr(clean_title, " – ");
-        if (!sep) sep = strstr(clean_title, " — ");
-
-        if (sep) {
-            *sep = '\0';
-            char *art = clean_title;
-            char *trk = sep + 3;
-            while (*trk == ' ' || *trk == '-' || (unsigned char)*trk > 127) trk++;
-            while (*art == ' ') art++;
-
-            snprintf(out_track->artist_name, sizeof(out_track->artist_name), "%s", art);
-            snprintf(out_track->track_name, sizeof(out_track->track_name), "%s", trk);
-        } else {
-            snprintf(out_track->track_name, sizeof(out_track->track_name), "%s", clean_title);
-            snprintf(out_track->artist_name, sizeof(out_track->artist_name), "%s", "Featured Artist");
-        }
-    } else {
-        snprintf(out_track->track_name, sizeof(out_track->track_name), "%s", clean);
-        snprintf(out_track->artist_name, sizeof(out_track->artist_name), "%s", "Featured Artist");
+        out_track->duration = 30;
+        out_track->found = 1;
+        free(resp);
+        return 1;
     }
 
-    out_track->found = 1;
-    return 1;
+    free(resp);
+    return 0;
 }

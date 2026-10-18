@@ -1,15 +1,14 @@
 #include "agent.h"
 #include "search.h"
 #include "brain.h"
-#include "renderer.h"
 #include <string.h>
 #include <ctype.h>
 
 void agent_init(void) {
 }
 
-int agent_is_music_request(const char *query, MusicTrack *out_track) {
-    if (!query || !out_track) return 0;
+int agent_has_music_intent(const char *query) {
+    if (!query) return 0;
     const unsigned char *u = (const unsigned char *)query;
     if (u[0] == 0xEF && u[1] == 0xBB && u[2] == 0xBF) {
         query += 3;
@@ -28,7 +27,6 @@ int agent_is_music_request(const char *query, MusicTrack *out_track) {
         lower[--i] = '\0';
     }
 
-    int has_music_intent = 0;
     if (strncmp(lower, "play ", 5) == 0 ||
         strstr(lower, "play the song") ||
         strstr(lower, "play song") ||
@@ -37,16 +35,18 @@ int agent_is_music_request(const char *query, MusicTrack *out_track) {
         strstr(lower, "play music") ||
         strstr(lower, "play some music") ||
         strstr(lower, "play album") ||
-        strstr(lower, "play me")) {
-        has_music_intent = 1;
+        strstr(lower, "play me") ||
+        strstr(lower, "can you play") ||
+        strstr(lower, "please play") ||
+        strstr(lower, "could you play")) {
+        return 1;
     }
+    return 0;
+}
 
-    if (!has_music_intent) return 0;
-
-    renderer_set_state(STATE_THINKING);
-    renderer_set_status("Searching & fetching full song...");
-    renderer_set_subtitle("Retrieving complete track for full start-to-finish playback...");
-
+int agent_is_music_request(const char *query, MusicTrack *out_track) {
+    if (!query || !out_track) return 0;
+    if (!agent_has_music_intent(query)) return 0;
     return search_music_track(query, out_track);
 }
 

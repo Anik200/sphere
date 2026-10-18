@@ -36,23 +36,23 @@ namespace SphereVoiceEngine {
         static Thread musicMonitorThread = null;
 
         static readonly Regex ExitWordRegex = new Regex(
-            @"\b(exit|quit|close|shutdown|shut\s+down|bye|goodbye|good\s+bye|bye\s+bye|see\s+you|see\s+ya|close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|terminate)\b",
+            @"^(exit|quit|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later|close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shut\s+down|shutdown|terminate)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex ExitWakeRegex = new Regex(
-            @"\b(hey\s+sphere|sphere|her\s+sphere|hi\s+sphere|hello\s+sphere)\s+(exit|quit|close|shutdown|shut\s+down|bye|goodbye|good\s+bye|bye\s+bye|see\s+you|close\s+app)\b",
+            @"^(hey\s+sphere|sphere|her\s+sphere|hi\s+sphere|hello\s+sphere)\s+(exit|quit|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later|close\s+app|close\s+the\s+app|shutdown|shut\s+down)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex BargeInStopRegex = new Regex(
-            @"\b(stop|be\s+quiet|shut\s+up|pause|cancel|wait|hold\s+on|stop\s+talking|stop\s+it|silence|hush|enough)\b",
+            @"^(hey\s+sphere\s+|sphere\s+)?(stop|be\s+quiet|shut\s+up|pause|cancel|stop\s+talking|stop\s+it|stop\s+music|stop\s+the\s+music)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex BargeInWakeRegex = new Regex(
-            @"\b(hey\s+sphere|her\s+sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere|sphere|spear|hey\s+spear|her\s+spear|hi\s+spear)\b",
+            @"^(hey\s+sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere)(\s+(?<q>.*))?$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex BargeInExitRegex = new Regex(
-            @"\b(exit|quit|close\s+app|shut\s+down|shutdown|goodbye|good\s+bye|bye|bye\s+bye|see\s+you)\b",
+            @"^(hey\s+sphere\s+|sphere\s+)?(exit|quit|close\s+app|close\s+the\s+app|shut\s+down|shutdown|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static bool IsExitPhrase(string text) {
@@ -112,12 +112,12 @@ namespace SphereVoiceEngine {
 
                 // 1. Wake Grammar (Expanded with phonetic variations: "her sphere", "here sphere", "spear", etc.)
                 Choices wakeChoices = new Choices(new string[] {
-                    "hey sphere", "sphere", "her sphere", "here sphere", "hair sphere",
-                    "hi sphere", "hello sphere", "ok sphere", "dear sphere", "the sphere",
-                    "yo sphere", "a sphere", "spear", "hey spear", "her spear", "hi spear",
-                    "stop", "exit", "quit", "goodbye", "bye", "shutdown", "shut down",
-                    "close", "close app", "exit app", "quit app",
-                    "hey sphere exit", "sphere exit", "hey sphere close", "sphere close"
+                    "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "her sphere",
+                    "stop", "exit", "quit", "goodbye", "shutdown", "shut down",
+                    "close app", "exit app", "quit app", "see you later",
+                    "hey sphere exit", "sphere exit", "hey sphere close", "sphere close",
+                    "hey sphere quit", "sphere quit", "hey sphere bye", "sphere bye",
+                    "play", "play song", "play music", "hey sphere play", "sphere play"
                 });
                 GrammarBuilder wakeGb = new GrammarBuilder(wakeChoices);
                 wakeGrammar = new Grammar(wakeGb);
@@ -126,9 +126,8 @@ namespace SphereVoiceEngine {
 
                 // 2. Wake + Dictation Grammar (Direct queries in one breath)
                 Choices wakePrefixChoices = new Choices(new string[] {
-                    "hey sphere", "sphere", "her sphere", "here sphere", "hair sphere",
-                    "hi sphere", "hello sphere", "ok sphere", "the sphere", "spear",
-                    "hey spear", "her spear"
+                    "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "her sphere",
+                    "hey sphere play", "sphere play", "play"
                 });
                 GrammarBuilder wakeDictGb = new GrammarBuilder();
                 wakeDictGb.Append(wakePrefixChoices);
@@ -145,12 +144,11 @@ namespace SphereVoiceEngine {
 
                 // 4. Interrupt Grammar (Barge-in while speaking or playing music)
                 Choices interruptChoices = new Choices(new string[] {
-                    "stop", "hey sphere", "sphere", "her sphere", "here sphere", "hair sphere", "spear", "hey spear", "her spear", "hi spear",
-                    "hi sphere", "hello sphere", "ok sphere", "the sphere", "yo sphere",
-                    "be quiet", "shut up", "pause", "cancel", "wait", "hold on", "stop talking", "stop it", "silence", "hush", "enough",
-                    "exit", "quit", "close", "shut down", "goodbye", "good bye", "bye", "bye bye", "see you", "close app", "exit app", "quit app",
-                    "hey sphere stop", "sphere stop", "hey sphere wait", "sphere wait", "hey sphere quiet", "sphere quiet",
-                    "hey sphere shut up", "hey sphere pause", "hey sphere be quiet", "hey sphere hold on", "hey sphere cancel"
+                    "stop", "be quiet", "shut up", "pause", "cancel", "stop talking", "stop it", "stop music", "stop the music",
+                    "hey sphere", "hi sphere", "hello sphere", "ok sphere",
+                    "exit", "quit", "goodbye", "good bye", "bye bye", "see you later", "close app", "close the app", "exit app", "exit the app", "quit app",
+                    "hey sphere stop", "sphere stop", "hey sphere shut up", "hey sphere pause", "hey sphere be quiet", "hey sphere cancel",
+                    "hey sphere exit", "sphere exit", "hey sphere quit", "sphere quit", "hey sphere goodbye"
                 });
                 GrammarBuilder intGb = new GrammarBuilder(interruptChoices);
                 interruptGrammar = new Grammar(intGb);
@@ -161,6 +159,7 @@ namespace SphereVoiceEngine {
                 // Event Handlers
                 sre.SpeechHypothesized += Sre_SpeechHypothesized;
                 sre.SpeechRecognized += Sre_SpeechRecognized;
+                sre.SpeechRecognitionRejected += Sre_SpeechRecognitionRejected;
                 sre.AudioLevelUpdated += Sre_AudioLevelUpdated;
                 sre.SpeechDetected += Sre_SpeechDetected;
 
@@ -200,15 +199,17 @@ namespace SphereVoiceEngine {
             string lower = text.ToLowerInvariant().Trim();
 
             string[] sphereKeywords = new string[] {
-                "hey sphere", "her sphere", "here sphere", "hair sphere",
-                "hi sphere", "hello sphere", "ok sphere", "dear sphere",
-                "the sphere", "sphere", "spear", "hey spear", "her spear", "hi spear"
+                "hey sphere play", "sphere play", "hey sphere", "hi sphere", "hello sphere", "ok sphere", "her sphere", "sphere"
             };
 
             foreach (string kw in sphereKeywords) {
                 int idx = lower.IndexOf(kw);
                 if (idx != -1) {
+                    // Ensure keyword starts at word boundary
+                    if (idx > 0 && char.IsLetterOrDigit(lower[idx - 1])) continue;
                     int queryStart = idx + kw.Length;
+                    if (queryStart < lower.Length && char.IsLetterOrDigit(lower[queryStart])) continue;
+
                     if (queryStart < text.Length) {
                         remainingQuery = text.Substring(queryStart).Trim();
                         while (remainingQuery.Length > 0 && (remainingQuery[0] == ',' || remainingQuery[0] == '.' || remainingQuery[0] == '?' || remainingQuery[0] == ' ')) {
@@ -232,7 +233,7 @@ namespace SphereVoiceEngine {
                     return;
                 }
                 mediaPlayer = Activator.CreateInstance(wmpType);
-                mediaPlayer.settings.volume = 100;
+                mediaPlayer.settings.volume = 75;
                 mediaPlayer.URL = url;
                 mediaPlayer.controls.play();
                 isMusicPlaying = true;
@@ -240,25 +241,36 @@ namespace SphereVoiceEngine {
 
                 if (musicMonitorThread == null || !musicMonitorThread.IsAlive) {
                     musicMonitorThread = new Thread(() => {
-                        bool hasStartedPlaying = false;
-                        DateTime startTime = DateTime.UtcNow;
+                        bool hasStarted = false;
+                        int stoppedCount = 0;
                         while (isMusicPlaying) {
                             Thread.Sleep(250);
                             try {
                                 if (mediaPlayer != null) {
                                     int state = (int)mediaPlayer.playState;
-                                    if (state == 3) { // 3 = Playing
-                                        hasStartedPlaying = true;
-                                    }
-                                    if (hasStartedPlaying || (DateTime.UtcNow - startTime).TotalSeconds > 4.0) {
-                                        // 1 = Stopped, 8 = MediaEnded
-                                        if (state == 1 || state == 8) {
+                                    // 3 = Playing, 6 = Buffering, 9 = Transitioning, 10 = Ready
+                                    if (state == 3 || state == 6 || state == 9 || state == 10) {
+                                        hasStarted = true;
+                                        stoppedCount = 0;
+                                    } else if (state == 8) {
+                                        // 8 = MediaEnded
+                                        isMusicPlaying = false;
+                                        Console.WriteLine("MUSIC_DONE");
+                                        Console.Out.Flush();
+                                        SetMode(ServiceMode.Standby);
+                                        break;
+                                    } else if (hasStarted && state == 1) {
+                                        // Require consecutive stopped checks so transient buffer pauses don't abort song
+                                        stoppedCount++;
+                                        if (stoppedCount >= 4) { // 1 second of confirmed stop
                                             isMusicPlaying = false;
                                             Console.WriteLine("MUSIC_DONE");
                                             Console.Out.Flush();
                                             SetMode(ServiceMode.Standby);
                                             break;
                                         }
+                                    } else {
+                                        stoppedCount = 0;
                                     }
                                 }
                             } catch {
@@ -347,6 +359,22 @@ namespace SphereVoiceEngine {
                         Console.Out.Flush();
                         SetMode(ServiceMode.Standby);
                     }
+                } else if (line.StartsWith("CMD:EXIT_SPEAK ", StringComparison.OrdinalIgnoreCase)) {
+                    StopMusic();
+                    try { sre.RecognizeAsyncCancel(); } catch { }
+                    try { sre.RecognizeAsyncStop(); } catch { }
+                    string textToSpeak = line.Substring(15).Trim();
+                    currentSpeakingText = textToSpeak;
+                    SetMode(ServiceMode.Speaking);
+                    try {
+                        synth.SpeakAsyncCancelAll();
+                        synth.SpeakAsync(textToSpeak);
+                    } catch (Exception ex) {
+                        Console.WriteLine("ERROR:EXIT_SPEAK:" + ex.Message);
+                        Console.WriteLine("SPEAK_DONE");
+                        Console.Out.Flush();
+                        SetMode(ServiceMode.Standby);
+                    }
                 } else if (line.Equals("CMD:STOP_SPEAK", StringComparison.OrdinalIgnoreCase)) {
                     StopMusic();
                     try { synth.SpeakAsyncCancelAll(); } catch { }
@@ -397,68 +425,13 @@ namespace SphereVoiceEngine {
 
             lock (modeLock) {
                 if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
-                    // Responsive barge-in for both speaking and music playback!
-                    if (e.Result.Confidence < 0.05f) return;
-
-                    bool isExit = IsExitPhrase(hypText) || BargeInExitRegex.IsMatch(hypText);
-                    bool isStop = BargeInStopRegex.IsMatch(hypText);
-                    string wakeQuery;
-                    bool isWake = IsWakePhrase(hypText, out wakeQuery) || BargeInWakeRegex.IsMatch(hypText);
-
-                    if (!isExit && !isStop && !isWake) {
-                        if (e.Result.Grammar == interruptGrammar) {
-                            string lower = hypText.ToLowerInvariant();
-                            if (lower.Contains("stop") || lower.Contains("quiet") || lower.Contains("pause") ||
-                                lower.Contains("wait") || lower.Contains("cancel") || lower.Contains("shut")) {
-                                isStop = true;
-                            } else if (lower.Contains("sphere") || lower.Contains("spear")) {
-                                isWake = true;
-                            } else if (lower.Contains("exit") || lower.Contains("quit") || lower.Contains("bye")) {
-                                isExit = true;
-                            }
-                        }
-                    }
-
-                    if (!isExit && !isStop && !isWake) return;
-
-                    try { synth.SpeakAsyncCancelAll(); } catch { }
-                    StopMusic();
-
-                    if (isExit) {
-                        Console.WriteLine("EXIT");
-                        Console.Out.Flush();
-                        return;
-                    }
-
-                    if (isWake) {
-                        Console.WriteLine("INTERRUPTED:" + hypText);
-                        Console.WriteLine("WAKE");
-                        if (!string.IsNullOrEmpty(wakeQuery)) {
-                            Console.WriteLine("FINAL:" + wakeQuery);
-                            SetMode(ServiceMode.Standby);
-                        } else {
-                            SetMode(ServiceMode.Listening);
-                        }
-                        Console.Out.Flush();
-                        return;
-                    }
-
-                    if (isStop) {
-                        Console.WriteLine("INTERRUPTED:" + hypText);
-                        Console.Out.Flush();
-                        SetMode(ServiceMode.Standby);
-                        return;
-                    }
+                    // Never interrupt speech or music on tentative hypotheses!
+                    // Waiting for high-confidence Sre_SpeechRecognized ensures speaker echo
+                    // or music vocals never cause speech cutoffs or ghost exits.
                     return;
                 }
 
                 if (currentMode == ServiceMode.Listening) {
-                    if (IsExitPhrase(hypText)) {
-                        Console.WriteLine("EXIT");
-                        Console.Out.Flush();
-                        return;
-                    }
-
                     speechHeardInListening = true;
 
                     // Filter out jittery low-confidence sub-word noises
@@ -484,23 +457,8 @@ namespace SphereVoiceEngine {
                         Console.Out.Flush();
                     }
                 } else if (currentMode == ServiceMode.Standby) {
-                    // In Standby mode, check if wake word appeared in hypothesis for instant trigger!
-                    string query;
-                    if (IsWakePhrase(hypText, out query)) {
-                        if (e.Result.Confidence >= 0.40f && IsExitPhrase(query)) {
-                            Console.WriteLine("EXIT");
-                            Console.Out.Flush();
-                            return;
-                        }
-                        Console.WriteLine("WAKE");
-                        if (!string.IsNullOrEmpty(query)) {
-                            Console.WriteLine("FINAL:" + query);
-                            SetMode(ServiceMode.Standby);
-                        } else {
-                            SetMode(ServiceMode.Listening);
-                        }
-                        Console.Out.Flush();
-                    }
+                    // In Standby mode, ignore partial unverified hypotheses to prevent ghost wakeups or accidental exits
+                    return;
                 }
             }
         }
@@ -511,26 +469,20 @@ namespace SphereVoiceEngine {
 
             lock (modeLock) {
                 if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
-                    bool isExit = IsExitPhrase(text) || BargeInExitRegex.IsMatch(text);
-                    bool isStop = BargeInStopRegex.IsMatch(text);
-                    string wakeQuery;
-                    bool isWake = IsWakePhrase(text, out wakeQuery) || BargeInWakeRegex.IsMatch(text);
-
-                    if (!isExit && !isStop && !isWake) {
-                        if (e.Result.Grammar == interruptGrammar) {
-                            string lower = text.ToLowerInvariant();
-                            if (lower.Contains("stop") || lower.Contains("quiet") || lower.Contains("pause") ||
-                                lower.Contains("wait") || lower.Contains("cancel") || lower.Contains("shut")) {
-                                isStop = true;
-                            } else if (lower.Contains("sphere") || lower.Contains("spear")) {
-                                isWake = true;
-                            } else if (lower.Contains("exit") || lower.Contains("quit") || lower.Contains("bye")) {
-                                isExit = true;
-                            }
-                        }
+                    // Require strict confidence to avoid speaker bleed/music interrupting itself
+                    if (e.Result.Confidence < 0.55f) {
+                        return;
                     }
 
-                    if (!isExit && !isStop && !isWake) return;
+                    bool isExit = IsExitPhrase(text) || BargeInExitRegex.IsMatch(text);
+                    bool isStop = BargeInStopRegex.IsMatch(text);
+                    string wakeQuery = null;
+                    bool isWake = BargeInWakeRegex.IsMatch(text) || IsWakePhrase(text, out wakeQuery);
+
+                    // Must match an explicit exit, stop, or wake command
+                    if (!isExit && !isWake && !isStop) {
+                        return;
+                    }
 
                     try { synth.SpeakAsyncCancelAll(); } catch { }
                     StopMusic();
@@ -540,6 +492,14 @@ namespace SphereVoiceEngine {
                         Console.Out.Flush();
                         return;
                     }
+
+                    if (isStop) {
+                        Console.WriteLine("INTERRUPTED:" + text);
+                        Console.Out.Flush();
+                        SetMode(ServiceMode.Standby);
+                        return;
+                    }
+
                     if (isWake) {
                         Console.WriteLine("INTERRUPTED:" + text);
                         Console.WriteLine("WAKE");
@@ -552,19 +512,27 @@ namespace SphereVoiceEngine {
                         Console.Out.Flush();
                         return;
                     }
-                    if (isStop) {
-                        Console.WriteLine("INTERRUPTED:" + text);
-                        Console.Out.Flush();
-                        SetMode(ServiceMode.Standby);
-                        return;
-                    }
                     return;
                 }
 
                 if (currentMode == ServiceMode.Standby) {
+                    if (e.Result.Confidence < 0.45f) {
+                        return;
+                    }
+
                     // Check for exit
                     if (IsExitPhrase(text)) {
                         Console.WriteLine("EXIT");
+                        Console.Out.Flush();
+                        return;
+                    }
+
+                    // Check for direct play command in Standby (e.g. "play despacito", "play some music")
+                    string lowerText = text.ToLowerInvariant().Trim();
+                    if (lowerText.StartsWith("play ") || lowerText.StartsWith("play the song ") || lowerText.StartsWith("play song ")) {
+                        Console.WriteLine("WAKE");
+                        Console.WriteLine("FINAL:" + text);
+                        SetMode(ServiceMode.Standby);
                         Console.Out.Flush();
                         return;
                     }
@@ -592,7 +560,7 @@ namespace SphereVoiceEngine {
 
                 if (currentMode == ServiceMode.Listening) {
                     // Check for exit
-                    if (IsExitPhrase(text)) {
+                    if (e.Result.Confidence >= 0.45f && IsExitPhrase(text)) {
                         Console.WriteLine("EXIT");
                         Console.Out.Flush();
                         return;
@@ -636,6 +604,13 @@ namespace SphereVoiceEngine {
                     }
                 }
             }
+        }
+
+        static void Sre_SpeechRecognitionRejected(object sender, SpeechRecognitionRejectedEventArgs e) {
+            // When speech recognition is rejected, do nothing!
+            // Rejecting means SAPI could not confidently recognize any valid phrase.
+            // Never interrupt speech or music on rejected ambient sounds or speaker echo.
+            return;
         }
 
         static void Synth_SpeakProgress(object sender, SpeakProgressEventArgs e) {

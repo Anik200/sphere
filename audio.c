@@ -11,8 +11,12 @@
 #include <mmsystem.h>
 #include <io.h>
 #else
+#define _GNU_SOURCE
 #include <unistd.h>
 #include <pthread.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <signal.h>
 #endif
 
 #define SAMPLES_PER_BUFFER 800 // 50ms at 16kHz
@@ -29,6 +33,26 @@ static HANDLE hChildStd_OUT_Rd = NULL;
 static HANDLE hProcess = NULL;
 static HANDLE hReaderThread = NULL;
 static CRITICAL_SECTION audio_cs;
+
+static void audio_lock(void) {
+    EnterCriticalSection(&audio_cs);
+}
+static void audio_unlock(void) {
+    LeaveCriticalSection(&audio_cs);
+}
+#else
+static int posix_child_in = -1;
+static int posix_child_out = -1;
+static pid_t posix_child_pid = -1;
+static pthread_t posix_reader_thread;
+static pthread_mutex_t audio_cs = PTHREAD_MUTEX_INITIALIZER;
+
+static void audio_lock(void) {
+    pthread_mutex_lock(&audio_cs);
+}
+static void audio_unlock(void) {
+    pthread_mutex_unlock(&audio_cs);
+}
 #endif
 
 static volatile float current_amp = 0.0f;
@@ -113,22 +137,6 @@ static void CALLBACK waveInProc(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DW
             } else {
                 current_amp = current_amp * 0.70f + target_amp * 0.30f;
             }
-
-            // Dual-layer Acoustic Barge-in detector:
-            // Conversational vocal speech (RMS > 0.022f for 2+ consecutive audio chunks ~100ms)
-            // immediately cuts off speaking or music without waiting!
-            static int vocal_burst_count = 0;
-            if ((is_speaking || is_music_playing) && rms > 0.022f) {
-                vocal_burst_count++;
-                if (vocal_burst_count >= 2) {
-                    interrupted_detected = 1;
-                    if (is_speaking) audio_send_cmd("CMD:STOP_SPEAK");
-                    if (is_music_playing) audio_send_cmd("CMD:STOP_MUSIC");
-                    vocal_burst_count = 0;
-                }
-            } else {
-                vocal_burst_count = 0;
-            }
         }
 
         waveInAddBuffer(hwi, pHdr, sizeof(WAVEHDR));
@@ -139,24 +147,41 @@ static void CALLBACK waveInProc(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DW
 static void audio_send_cmd(const char *cmd) {
 #ifdef _WIN32
     if (!hChildStd_IN_Wr || !service_running) return;
-    char buf[4096];
+    char buf[8192];
     int len = snprintf(buf, sizeof(buf), "%s\n", cmd);
     DWORD written = 0;
     WriteFile(hChildStd_IN_Wr, buf, len, &written, NULL);
     FlushFileBuffers(hChildStd_IN_Wr);
+#else
+    if (posix_child_in < 0 || !service_running) return;
+    char buf[8192];
+    int len = snprintf(buf, sizeof(buf), "%s\n", cmd);
+    ssize_t ret = write(posix_child_in, buf, len);
+    (void)ret;
 #endif
 }
 
 #ifdef _WIN32
 static DWORD WINAPI voice_reader_thread(LPVOID lpParam) {
     (void)lpParam;
+#else
+static void *voice_reader_thread(void *lpParam) {
+    (void)lpParam;
+#endif
     char chunk[512];
     char line_buf[2048];
     int line_len = 0;
-    DWORD bytesRead = 0;
 
+#ifdef _WIN32
+    DWORD bytesRead = 0;
     while (service_running && ReadFile(hChildStd_OUT_Rd, chunk, sizeof(chunk) - 1, &bytesRead, NULL)) {
         if (bytesRead == 0) break;
+#else
+    while (service_running) {
+        ssize_t n = read(posix_child_out, chunk, sizeof(chunk) - 1);
+        if (n <= 0) break;
+        DWORD bytesRead = (DWORD)n;
+#endif
         chunk[bytesRead] = '\0';
 
         for (DWORD i = 0; i < bytesRead; i++) {
@@ -180,21 +205,22 @@ static DWORD WINAPI voice_reader_thread(LPVOID lpParam) {
                         renderer_set_input_buffer(hyp);
                     } else if (strcmp(line_buf, "WAKE") == 0) {
                         wake_detected = 1;
-                        EnterCriticalSection(&audio_cs);
+                        audio_lock();
                         is_recording_query = 1;
                         num_recorded_samples = 0;
-                        LeaveCriticalSection(&audio_cs);
+                        audio_unlock();
                     } else if (strncmp(line_buf, "FINAL:", 6) == 0) {
-                        EnterCriticalSection(&audio_cs);
+                        audio_lock();
                         is_recording_query = 0;
                         int samples_count = num_recorded_samples;
-                        LeaveCriticalSection(&audio_cs);
+                        audio_unlock();
 
                         char precise_text[512] = {0};
                         int got_precise = 0;
 
                         // If audio was captured, transcribe with Google Neural STT for pinpoint accuracy!
                         if (samples_count > (int)(SAMPLE_RATE * 0.35f)) {
+#ifdef _WIN32
                             char temp_path[MAX_PATH];
                             GetTempPathA(MAX_PATH, temp_path);
                             char wav_file[MAX_PATH];
@@ -220,6 +246,22 @@ static DWORD WINAPI voice_reader_thread(LPVOID lpParam) {
                                 CloseHandle(pi.hProcess);
                                 CloseHandle(pi.hThread);
                             }
+#else
+                            const char *temp_path = getenv("TMPDIR");
+                            if (!temp_path) temp_path = "/tmp";
+                            char wav_file[512];
+                            snprintf(wav_file, sizeof(wav_file), "%s/sphere_query_%d.wav", temp_path, (int)getpid());
+                            char res_file[512];
+                            snprintf(res_file, sizeof(res_file), "%s/sphere_stt_res_%d.txt", temp_path, (int)getpid());
+                            unlink(res_file);
+
+                            write_wav_file(wav_file, recorded_samples, samples_count);
+
+                            char cmd[1024];
+                            snprintf(cmd, sizeof(cmd), "python3 transcribe.py \"%s\" \"%s\" 2>/dev/null || python transcribe.py \"%s\" \"%s\" 2>/dev/null", wav_file, res_file, wav_file, res_file);
+                            int ret = system(cmd);
+                            (void)ret;
+#endif
 
                             FILE *f = fopen(res_file, "r");
                             if (f) {
@@ -231,12 +273,20 @@ static DWORD WINAPI voice_reader_thread(LPVOID lpParam) {
                                     if (strlen(precise_text) > 0) got_precise = 1;
                                 }
                                 fclose(f);
+#ifdef _WIN32
                                 DeleteFileA(res_file);
+#else
+                                unlink(res_file);
+#endif
                             }
+#ifdef _WIN32
                             DeleteFileA(wav_file);
+#else
+                            unlink(wav_file);
+#endif
                         }
 
-                        EnterCriticalSection(&audio_cs);
+                        audio_lock();
                         if (got_precise) {
                             strncpy(final_speech_buf, precise_text, sizeof(final_speech_buf) - 1);
                         } else {
@@ -245,13 +295,13 @@ static DWORD WINAPI voice_reader_thread(LPVOID lpParam) {
                         final_speech_buf[sizeof(final_speech_buf) - 1] = '\0';
                         final_speech_ready = 1;
                         num_recorded_samples = 0;
-                        LeaveCriticalSection(&audio_cs);
+                        audio_unlock();
                     } else if (strncmp(line_buf, "STREAM:", 7) == 0) {
                         const char *slice = line_buf + 7;
-                        EnterCriticalSection(&audio_cs);
+                        audio_lock();
                         snprintf(spoken_words_stream, sizeof(spoken_words_stream), "Sphere: %s", slice);
                         renderer_set_subtitle(spoken_words_stream);
-                        LeaveCriticalSection(&audio_cs);
+                        audio_unlock();
                     } else if (strcmp(line_buf, "SPEAK_DONE") == 0) {
                         is_speaking = 0;
                     } else if (strncmp(line_buf, "MUSIC_STARTED", 13) == 0) {
@@ -268,10 +318,15 @@ static DWORD WINAPI voice_reader_thread(LPVOID lpParam) {
                             lower_int[k] = (char)tolower((unsigned char)line_buf[k]);
                         }
                         lower_int[k] = '\0';
-                        if (strstr(lower_int, "sphere") || strstr(lower_int, "spear") ||
-                            strstr(lower_int, "hey") || strstr(lower_int, "her") ||
-                            strstr(lower_int, "hi") || strstr(lower_int, "hello")) {
+                        if ((strstr(lower_int, "sphere") || strstr(lower_int, "spear") ||
+                             strstr(lower_int, "hey") || strstr(lower_int, "her") ||
+                             strstr(lower_int, "hi") || strstr(lower_int, "hello")) &&
+                            !strstr(lower_int, "stop") && !strstr(lower_int, "quiet") &&
+                            !strstr(lower_int, "pause") && !strstr(lower_int, "cancel") &&
+                            !strstr(lower_int, "shut up")) {
                             interrupted_with_wake = 1;
+                        } else {
+                            interrupted_with_wake = 0;
                         }
                     } else if (strcmp(line_buf, "EXIT") == 0) {
                         is_speaking = 0;
@@ -279,10 +334,10 @@ static DWORD WINAPI voice_reader_thread(LPVOID lpParam) {
                         exit_detected = 1;
                     } else if (strcmp(line_buf, "TIMEOUT") == 0) {
                         timeout_detected = 1;
-                        EnterCriticalSection(&audio_cs);
+                        audio_lock();
                         is_recording_query = 0;
                         num_recorded_samples = 0;
-                        LeaveCriticalSection(&audio_cs);
+                        audio_unlock();
                     }
                 }
                 line_len = 0;
@@ -295,7 +350,6 @@ static DWORD WINAPI voice_reader_thread(LPVOID lpParam) {
     }
     return 0;
 }
-#endif
 
 int audio_init(void) {
 #ifdef _WIN32
@@ -363,7 +417,11 @@ int audio_init(void) {
 
     DWORD parent_pid = GetCurrentProcessId();
     char cmdLine[128];
-    snprintf(cmdLine, sizeof(cmdLine), "sphere_voice_service.exe %lu", parent_pid);
+    if (_access("sphere_voice_service.exe", 0) == 0) {
+        snprintf(cmdLine, sizeof(cmdLine), "sphere_voice_service.exe %lu", parent_pid);
+    } else {
+        snprintf(cmdLine, sizeof(cmdLine), "python sphere_voice_service.py %lu", parent_pid);
+    }
     BOOL success = CreateProcessA(NULL, cmdLine, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
 
     CloseHandle(hChildStd_OUT_Wr);
@@ -399,23 +457,62 @@ int audio_init(void) {
     audio_set_standby_mode();
     return 1;
 #else
-    return 0;
+    int in_pipe[2];
+    int out_pipe[2];
+    if (pipe(in_pipe) != 0 || pipe(out_pipe) != 0) {
+        return 0;
+    }
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process
+        close(in_pipe[1]);
+        close(out_pipe[0]);
+        dup2(in_pipe[0], STDIN_FILENO);
+        dup2(out_pipe[1], STDOUT_FILENO);
+        dup2(out_pipe[1], STDERR_FILENO);
+        close(in_pipe[0]);
+        close(out_pipe[1]);
+
+        char parent_pid_str[32];
+        snprintf(parent_pid_str, sizeof(parent_pid_str), "%d", (int)getppid());
+
+        execlp("python3", "python3", "sphere_voice_service.py", parent_pid_str, (char *)NULL);
+        execlp("python", "python", "sphere_voice_service.py", parent_pid_str, (char *)NULL);
+        _exit(1);
+    } else if (pid > 0) {
+        // Parent process
+        close(in_pipe[0]);
+        close(out_pipe[1]);
+        posix_child_in = in_pipe[1];
+        posix_child_out = out_pipe[0];
+        posix_child_pid = pid;
+        service_running = 1;
+
+        pthread_create(&posix_reader_thread, NULL, (void *(*)(void *))voice_reader_thread, NULL);
+        audio_set_standby_mode();
+        return 1;
+    } else {
+        close(in_pipe[0]); close(in_pipe[1]);
+        close(out_pipe[0]); close(out_pipe[1]);
+        return 0;
+    }
 #endif
 }
 
 void audio_set_standby_mode(void) {
-    EnterCriticalSection(&audio_cs);
+    audio_lock();
     is_recording_query = 0;
     num_recorded_samples = 0;
-    LeaveCriticalSection(&audio_cs);
+    audio_unlock();
     audio_send_cmd("CMD:WAKE_STANDBY");
 }
 
 void audio_set_listening_mode(void) {
-    EnterCriticalSection(&audio_cs);
+    audio_lock();
     num_recorded_samples = 0;
     is_recording_query = 1;
-    LeaveCriticalSection(&audio_cs);
+    audio_unlock();
     audio_send_cmd("CMD:LISTEN_QUERY");
 }
 
@@ -458,8 +555,7 @@ int audio_check_timeout_detected(void) {
 int audio_get_final_speech(char *out_text, size_t max_len) {
     if (!out_text || max_len == 0) return 0;
     int got = 0;
-#ifdef _WIN32
-    EnterCriticalSection(&audio_cs);
+    audio_lock();
     if (final_speech_ready) {
         strncpy(out_text, final_speech_buf, max_len - 1);
         out_text[max_len - 1] = '\0';
@@ -467,8 +563,7 @@ int audio_get_final_speech(char *out_text, size_t max_len) {
         final_speech_ready = 0;
         got = 1;
     }
-    LeaveCriticalSection(&audio_cs);
-#endif
+    audio_unlock();
     return got;
 }
 
@@ -488,9 +583,10 @@ float audio_get_current_amp(void) {
         return synth_amp;
     }
     if (is_music_playing) {
-        static float music_pulse = 0.0f;
-        music_pulse += 0.08f;
-        float music_amp = 0.20f + 0.12f * sinf(music_pulse) * cosf(music_pulse * 0.5f);
+        static float music_phase = 0.0f;
+        music_phase += 0.16f;
+        float music_amp = 0.20f + 0.10f * sinf(music_phase) * cosf(music_phase * 0.5f);
+        if (music_amp < 0.10f) music_amp = 0.10f;
         if (mic > music_amp) return mic;
         return music_amp;
     }
@@ -534,11 +630,9 @@ void audio_speak(const char *text) {
     if (is_music_playing) {
         audio_stop_music();
     }
-#ifdef _WIN32
-    EnterCriticalSection(&audio_cs);
+    audio_lock();
     spoken_words_stream[0] = '\0';
-    LeaveCriticalSection(&audio_cs);
-#endif
+    audio_unlock();
 
     char clean_text[4096];
     clean_for_speech(text, clean_text, sizeof(clean_text));
@@ -563,6 +657,37 @@ void audio_speak(const char *text) {
     audio_send_cmd(cmd);
 }
 
+void audio_speak_exit(const char *text) {
+    if (!text || strlen(text) == 0) return;
+    if (is_music_playing) {
+        audio_stop_music();
+    }
+    audio_lock();
+    spoken_words_stream[0] = '\0';
+    audio_unlock();
+
+    char clean_text[4096];
+    clean_for_speech(text, clean_text, sizeof(clean_text));
+
+    if (strlen(clean_text) < 3) {
+        size_t d = 0;
+        for (size_t s = 0; text[s] && d + 1 < sizeof(clean_text); s++) {
+            char c = text[s];
+            if (c == '\n' || c == '\r' || c == '\t' || c == '"' || c == '\\') c = ' ';
+            if (c == ' ' && d > 0 && clean_text[d - 1] == ' ') continue;
+            clean_text[d++] = c;
+        }
+        clean_text[d] = '\0';
+    }
+
+    if (strlen(clean_text) == 0) return;
+
+    char cmd[4096 + 32];
+    snprintf(cmd, sizeof(cmd), "CMD:EXIT_SPEAK %s", clean_text);
+    is_speaking = 1;
+    audio_send_cmd(cmd);
+}
+
 void audio_stop_speech(void) {
     audio_send_cmd("CMD:STOP_SPEAK");
     is_speaking = 0;
@@ -577,7 +702,7 @@ void audio_play_music(const char *url) {
     if (is_speaking) {
         audio_stop_speech();
     }
-    char cmd[4096];
+    char cmd[8192];
     snprintf(cmd, sizeof(cmd), "CMD:PLAY_MUSIC %s", url);
     is_music_playing = 1;
     audio_send_cmd(cmd);
@@ -628,5 +753,19 @@ void audio_cleanup(void) {
         hChildStd_OUT_Rd = NULL;
     }
     DeleteCriticalSection(&audio_cs);
+#else
+    if (posix_child_in >= 0) {
+        close(posix_child_in);
+        posix_child_in = -1;
+    }
+    if (posix_child_out >= 0) {
+        close(posix_child_out);
+        posix_child_out = -1;
+    }
+    if (posix_child_pid > 0) {
+        kill(posix_child_pid, SIGTERM);
+        waitpid(posix_child_pid, NULL, WNOHANG);
+        posix_child_pid = -1;
+    }
 #endif
 }
