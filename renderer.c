@@ -32,7 +32,6 @@ static volatile AgentState previous_state = STATE_IDLE;
 static volatile float current_voice_amp = 0.0f;
 static volatile float current_angle = 0.0f;
 static volatile float current_morph = 0.0f;
-static volatile int happy_countdown = 0;
 static volatile BallExpression current_expression = EXPR_NONE;
 static volatile int expression_countdown = 0;
 static volatile float music_phase = 0.0f;

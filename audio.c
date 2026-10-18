@@ -176,15 +176,16 @@ static void *voice_reader_thread(void *lpParam) {
     DWORD bytesRead = 0;
     while (service_running && ReadFile(hChildStd_OUT_Rd, chunk, sizeof(chunk) - 1, &bytesRead, NULL)) {
         if (bytesRead == 0) break;
+        int count = (int)bytesRead;
 #else
     while (service_running) {
         ssize_t n = read(posix_child_out, chunk, sizeof(chunk) - 1);
         if (n <= 0) break;
-        DWORD bytesRead = (DWORD)n;
+        int count = (int)n;
 #endif
-        chunk[bytesRead] = '\0';
+        chunk[count] = '\0';
 
-        for (DWORD i = 0; i < bytesRead; i++) {
+        for (int i = 0; i < count; i++) {
             char c = chunk[i];
             if (c == '\r') continue;
             if (c == '\n') {
