@@ -13,23 +13,27 @@ echo ""
 
 # 1. Update Termux package repositories
 echo "[1/4] Updating package repositories..."
-pkg update -y
+pkg update -y || apt-get update -y
 
 # 2. Install essential packages: compiler, build tools, python, audio tools
 echo "[2/4] Installing C compiler, Python, ffmpeg, mpv, and audio tools..."
+pkg install -y clang make python python-pip git ffmpeg mpv termux-api || \
 pkg install -y clang make python git ffmpeg mpv termux-api
 
 # 3. Install Python dependencies for full song search and voice support
 echo "[3/4] Installing Python libraries (yt-dlp, SpeechRecognition)..."
-pip install --upgrade pip
-pip install yt-dlp speechrecognition
+# Do NOT run 'pip install --upgrade pip' in Termux as Termux manages pip via pkg
+pip install --break-system-packages yt-dlp speechrecognition 2>/dev/null || \
+pip install yt-dlp speechrecognition 2>/dev/null || \
+pip install --break-system-packages yt-dlp 2>/dev/null || \
+pip install yt-dlp 2>/dev/null || true
 
 # 4. Compile native C binary
 echo "[4/4] Compiling native Sphere AI binary..."
-make clean
+make clean || rm -f sphere_ai *.o
 make
 
-chmod +x sphere_ai sphere_voice_service.py music_search.py
+chmod +x sphere_ai sphere_voice_service.py music_search.py 2>/dev/null || true
 
 echo ""
 echo "=========================================================="

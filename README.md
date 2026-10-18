@@ -59,8 +59,8 @@ An ultra-optimized, cross-platform Voice AI Agent built entirely in native C (`b
    *Or install manually:*
    ```bash
    pkg update -y
-   pkg install -y clang make python git ffmpeg mpv termux-api
-   pip install yt-dlp speechrecognition
+   pkg install -y clang make python python-pip git ffmpeg mpv termux-api
+   pip install --break-system-packages yt-dlp speechrecognition 2>/dev/null || pip install yt-dlp speechrecognition
    make
    ```
 2. Start Sphere AI:
