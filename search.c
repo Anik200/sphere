@@ -1051,7 +1051,13 @@ int search_music_track(const char *query, MusicTrack *out_track) {
     }
 #else
     const char *tmp = getenv("TMPDIR");
-    if (!tmp) tmp = "/tmp";
+    if (!tmp || access(tmp, W_OK) != 0) {
+        if (access("/data/data/com.termux/files/usr/tmp", W_OK) == 0) {
+            tmp = "/data/data/com.termux/files/usr/tmp";
+        } else {
+            tmp = "/tmp";
+        }
+    }
     char res_file[512];
     snprintf(res_file, sizeof(res_file), "%s/sphere_music_%d.json", tmp, (int)getpid());
     unlink(res_file);

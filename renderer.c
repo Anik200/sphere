@@ -10,6 +10,7 @@
 #else
 #include <unistd.h>
 #include <pthread.h>
+#include <sys/ioctl.h>
 #endif
 
 #ifndef M_PI
@@ -263,8 +264,8 @@ void renderer_init(void) {
     SetConsoleMode(hOut, dwMode);
 #endif
 
-    // Hide cursor and clear screen
-    printf("\033[?25l\033[2J");
+    // Enter alternate screen buffer, hide cursor, clear screen, and home cursor
+    printf("\033[?1049h\033[?25l\033[2J\033[H");
     fflush(stdout);
 
     // Initialize Fibonacci Sphere base coordinates and default Happy Face target coordinates
@@ -393,8 +394,8 @@ void renderer_trigger_happy(void) {
     renderer_set_state(STATE_HAPPY);
 }
 
-static inline void set_subpixel(int px, int py) {
-    if (px < 0 || px >= PIX_W || py < 0 || py >= PIX_H) return;
+static inline void set_subpixel(int px, int py, int max_w, int max_h) {
+    if (px < 0 || px >= max_w || py < 0 || py >= max_h) return;
     braille_grid[py / 4][px / 2] |= pixel_map[py % 4][px % 2];
 }
 
@@ -431,7 +432,6 @@ void renderer_render_frame(void) {
 
     // Dynamic rotation angle:
     // The ball ONLY spins when NOT speaking and NOT listening!
-    // Otherwise it stays completely still (zero spin) and only ripples!
     float rotation_speed = 0.035f; // Normal idle rotation
     if (state == STATE_SPEAKING || state == STATE_LISTENING || state == STATE_MUSIC) {
         rotation_speed = 0.0f; // Stays completely still, zero spin!
@@ -448,8 +448,41 @@ void renderer_render_frame(void) {
     float angle = current_angle;
     float morph = current_morph;
 
+    int term_cols = 80;
+    int term_rows = 24;
+
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi)) {
+        term_cols = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        term_rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+    }
+#else
+    struct winsize ws;
+    if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_row > 0 && ws.ws_col > 0) {
+        term_cols = ws.ws_col;
+        term_rows = ws.ws_row;
+    }
+#endif
+
+    // Dynamically scale drawing height to strictly fit within the terminal without scrolling
+    int draw_h = TERM_H;
+    if (term_rows < 27) {
+        draw_h = term_rows - 8;
+        if (draw_h < 10) draw_h = 10;
+        if (draw_h > TERM_H) draw_h = TERM_H;
+    }
+
+    int draw_w = (int)(draw_h * 2.15f);
+    if (draw_w > term_cols - 4) draw_w = term_cols - 4;
+    if (draw_w > TERM_W) draw_w = TERM_W;
+    if (draw_w < 20) draw_w = 20;
+
+    int pix_w = draw_w * 2;
+    int pix_h = draw_h * 4;
+
     // Dynamic base scale: expands and breathes with vocal amplitude or music
-    float base_scale = (PIX_H * 0.36f);
+    float base_scale = (pix_h * 0.36f);
     if (state == STATE_MUSIC) {
         base_scale *= (1.0f + sound_energy * 0.05f); // Gentle 5% breathing during music
     } else if (sound_energy > 0.03f) {
@@ -475,7 +508,6 @@ void renderer_render_frame(void) {
 
         // Dynamic fluid ripples and harmonic surface distortions
         if (state == STATE_MUSIC) {
-            // Subtle, elegant harmonic surface ripples without chaotic tearing
             float wave_lat = sinf(particles[i].sy * 4.0f + music_phase * 2.0f) * (sound_energy * 0.04f);
             float theta = atan2f(particles[i].sz, particles[i].sx);
             float wave_lon = cosf(theta * 2.0f + music_phase * 1.5f) * (sound_energy * 0.02f);
@@ -484,24 +516,15 @@ void renderer_render_frame(void) {
             ry *= (1.0f + wave_lat * 0.5f);
             rz *= ripple;
         } else if (sound_energy > 0.02f) {
-            // 1. Traveling latitude ripple wave (undulating from equator to poles)
             float wave_lat = sinf(particles[i].sy * 7.0f - ripple_phase * 2.2f) * (sound_energy * 0.18f);
-
-            // 2. Traveling longitude / azimuthal swirling distortion
             float theta = atan2f(particles[i].sz, particles[i].sx);
             float wave_lon = cosf(theta * 3.0f + ripple_phase * 1.8f) * (sound_energy * 0.14f);
-
-            // 3. High-frequency acoustic ripple shockwaves radiating across the surface
             float radial_dist = particles[i].sx * particles[i].sx + particles[i].sz * particles[i].sz;
             float wave_shock = sinf(radial_dist * 9.0f - ripple_phase * 2.8f) * (sound_energy * 0.14f);
-
-            // 4. Acoustic particle repulsion (repels particles outward along their 3D normal vector)
             float repel_force = sound_energy * 0.14f;
             float repel_band = sinf(particles[i].sy * 5.0f + ripple_phase * 1.5f) * (sound_energy * 0.10f);
 
-            // Combined dynamic ripple and outward repulsion
             float ripple_repel = 1.0f + wave_lat + wave_lon + wave_shock + repel_force + repel_band;
-
             rx *= ripple_repel;
             ry *= (1.0f + wave_lat * 0.60f + sound_energy * 0.10f + repel_band);
             rz *= ripple_repel;
@@ -514,13 +537,12 @@ void renderer_render_frame(void) {
 
         // Perspective projection
         float fov = 2.6f / (2.6f - fz * 0.55f);
-        int px = (int)(PIX_W / 2.0f + fx * base_scale * fov);
-        int py = (int)(PIX_H / 2.0f + fy * base_scale * fov);
-        set_subpixel(px, py);
+        int px = (int)(pix_w / 2.0f + fx * base_scale * fov);
+        int py = (int)(pix_h / 2.0f + fy * base_scale * fov);
+        set_subpixel(px, py, pix_w, pix_h);
     }
 
-    // Determine state color: expressions & dynamic state colors take priority,
-    // custom color applies to base/idle/speaking states!
+    // Determine state color
     const char *state_color;
     if (morph > 0.35f) {
         switch (current_expression) {
@@ -535,10 +557,10 @@ void renderer_render_frame(void) {
     } else {
         switch (state) {
             case STATE_LISTENING:
-                state_color = COLOR_PURPLE; // Always show purple when listening!
+                state_color = COLOR_PURPLE;
                 break;
             case STATE_THINKING:
-                state_color = COLOR_CYAN;   // Always show cyan when searching/thinking!
+                state_color = COLOR_CYAN;
                 break;
             case STATE_MUSIC:
                 state_color = (custom_color[0] != '\0') ? custom_color : COLOR_CYAN;
@@ -551,7 +573,7 @@ void renderer_render_frame(void) {
         }
     }
 
-    // Live Audio Visualizer Meter: shows exact sound level reaction in real-time
+    // Live Audio Visualizer Meter
     char sound_meter[32] = {0};
     int meter_bars = (int)(sound_energy * 10.0f);
     if (meter_bars > 10) meter_bars = 10;
@@ -560,15 +582,16 @@ void renderer_render_frame(void) {
     for (; b < 10; b++) sound_meter[b] = '-';
     sound_meter[10] = '\0';
 
-    // Write entire frame to single buffer
+    // Write entire frame to single buffer starting with cursor home
     int pos = sprintf(frame_buffer, "\033[H\033[2K  %sSphereAI%s | %s%s\033[0m | Sound: [%s%s%s]\n",
                       COLOR_WHITE_BOLD, COLOR_RESET, state_color, current_status,
                       state_color, sound_meter, COLOR_RESET);
 
     pos += sprintf(&frame_buffer[pos], "%s", state_color);
 
-    for (int y = 0; y < TERM_H; y++) {
-        for (int x = 0; x < TERM_W; x++) {
+    for (int y = 0; y < draw_h; y++) {
+        pos += sprintf(&frame_buffer[pos], "\033[2K  ");
+        for (int x = 0; x < draw_w; x++) {
             unsigned char mask = braille_grid[y][x];
             if (mask == 0) {
                 frame_buffer[pos++] = ' ';
@@ -581,15 +604,16 @@ void renderer_render_frame(void) {
         frame_buffer[pos++] = '\n';
     }
 
-    // Subtitle section below sphere (clean full multi-line word wrap - NO CUTOFF!)
+    // Subtitle section below sphere
     pos += sprintf(&frame_buffer[pos], "%s\033[2K\n", COLOR_RESET);
 
     if (current_subtitle[0] != '\0') {
         int len = (int)strlen(current_subtitle);
         int start = 0;
-        int max_w = 72;
+        int max_w = term_cols > 8 ? term_cols - 6 : 40;
+        int max_sub_lines = (term_rows < 27) ? 2 : 5;
         int lines = 0;
-        while (start < len && lines < 12) {
+        while (start < len && lines < max_sub_lines) {
             int end = start + max_w;
             if (end >= len) {
                 end = len;
@@ -607,7 +631,7 @@ void renderer_render_frame(void) {
         pos += sprintf(&frame_buffer[pos], "\033[2K\n");
     }
 
-    pos += sprintf(&frame_buffer[pos], "\033[2K  %s[Voice Control: Say \"Hey Sphere\" to activate | Say \"stop\" to interrupt | Esc to exit]\033[0m\n\033[2K", COLOR_DIM);
+    pos += sprintf(&frame_buffer[pos], "\033[2K  %s[Space/Enter to speak or type prompt | 'q'/Esc to exit]\033[0m\033[J", COLOR_DIM);
 
     unlock_renderer();
 
@@ -616,7 +640,8 @@ void renderer_render_frame(void) {
 }
 
 void renderer_cleanup(void) {
-    printf("\033[?25h\033[0m\n"); // Restore cursor & colors
+    // Restore main screen buffer, show cursor, and reset colors
+    printf("\033[?1049l\033[?25h\033[0m\n");
     fflush(stdout);
 #ifdef _WIN32
     DeleteCriticalSection(&render_lock);

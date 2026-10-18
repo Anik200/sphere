@@ -15,6 +15,7 @@ import subprocess
 import shutil
 import re
 import math
+import tempfile
 
 # Force UTF-8 stdout
 if hasattr(sys.stdout, "reconfigure"):
@@ -64,20 +65,20 @@ def is_exit_phrase(text):
 # --- Text To Speech (TTS) Engine Detection ---
 def get_available_tts():
     """Detect the best available TTS command for the current platform."""
-    # 1. Android Termux API
-    if shutil.which("termux-tts-speak"):
-        return "termux-tts-speak"
-    # 2. Linux Speech Dispatcher
-    if shutil.which("spd-say"):
-        return "spd-say"
-    # 3. espeak-ng / espeak
+    # 1. espeak-ng / espeak (offline, lightweight, fast, works everywhere including Android Termux)
     if shutil.which("espeak-ng"):
         return "espeak-ng"
     if shutil.which("espeak"):
         return "espeak"
-    # 4. macOS say
+    # 2. Linux Speech Dispatcher
+    if shutil.which("spd-say"):
+        return "spd-say"
+    # 3. macOS say
     if shutil.which("say"):
         return "say"
+    # 4. Android Termux API (fallback only if espeak is absent)
+    if shutil.which("termux-tts-speak"):
+        return "termux-tts-speak"
     return "simulated"
 
 TTS_ENGINE = get_available_tts()
@@ -143,17 +144,31 @@ def speak_thread_worker(text, is_exit=False):
     is_speaking = True
     speech_cancel_flag = False
 
-    # Spawn audio TTS in background if an engine is available
     tts_proc = None
+    tmp_wav = None
+
     try:
-        if TTS_ENGINE == "termux-tts-speak":
-            tts_proc = subprocess.Popen(["termux-tts-speak", text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if TTS_ENGINE in ("espeak-ng", "espeak"):
+            if MUSIC_PLAYER == "mpv":
+                # Generate temporary WAV and play via mpv (OpenSL ES on Android, ALSA on Linux)
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+                    tmp_wav = tf.name
+                gen = subprocess.run([TTS_ENGINE, "-s", "155", "-w", tmp_wav, text], capture_output=True)
+                if gen.returncode == 0 and os.path.exists(tmp_wav) and os.path.getsize(tmp_wav) > 44:
+                    tts_proc = subprocess.Popen(["mpv", "--no-video", "--really-quiet", tmp_wav],
+                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    tts_proc = subprocess.Popen([TTS_ENGINE, "-s", "155", text],
+                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                tts_proc = subprocess.Popen([TTS_ENGINE, "-s", "155", text],
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif TTS_ENGINE == "spd-say":
             tts_proc = subprocess.Popen(["spd-say", "-r", "10", text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        elif TTS_ENGINE in ("espeak-ng", "espeak"):
-            tts_proc = subprocess.Popen([TTS_ENGINE, "-s", "165", text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         elif TTS_ENGINE == "say":
             tts_proc = subprocess.Popen(["say", text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif TTS_ENGINE == "termux-tts-speak":
+            tts_proc = subprocess.Popen(["termux-tts-speak", text], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 
@@ -175,7 +190,16 @@ def speak_thread_worker(text, is_exit=False):
     # If tts_proc is running, give it a moment to finish speaking
     if tts_proc and not speech_cancel_flag:
         try:
-            tts_proc.wait(timeout=2.0)
+            tts_proc.wait(timeout=5.0 if is_exit else 2.5)
+        except Exception:
+            try:
+                tts_proc.kill()
+            except Exception:
+                pass
+
+    if tmp_wav and os.path.exists(tmp_wav):
+        try:
+            os.remove(tmp_wav)
         except Exception:
             pass
 
@@ -247,6 +271,13 @@ def speech_recognition_worker():
     """Background listener using SpeechRecognition if PyAudio / mic is available."""
     try:
         import speech_recognition as sr
+        try:
+            mics = sr.Microphone.list_microphone_names()
+            if not mics:
+                return
+        except Exception:
+            return
+
         r = sr.Recognizer()
         r.energy_threshold = 280
         r.dynamic_energy_threshold = True

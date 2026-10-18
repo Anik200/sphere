@@ -190,6 +190,7 @@ static int is_exit_command(const char *lower) {
 
     return (strcmp(p, "exit") == 0 ||
             strcmp(p, "quit") == 0 ||
+            strcmp(p, "q") == 0 ||
             strcmp(p, "close") == 0 ||
             strcmp(p, "goodbye") == 0 ||
             strcmp(p, "good bye") == 0 ||
@@ -532,17 +533,19 @@ int main(void) {
 
         if (start_in_listening) {
             renderer_set_state(STATE_LISTENING);
-            renderer_set_status("Awake! Listening to your voice... (Speak now)");
-            renderer_set_subtitle("Listening...");
+            renderer_set_status("Awake! Listening... (Speak or type prompt)");
+            renderer_set_subtitle("Listening... (Type prompt and press Enter)");
             audio_set_listening_mode();
         } else {
             audio_set_standby_mode();
             renderer_set_state(STATE_IDLE);
             renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-            renderer_set_subtitle("Say \"Hey Sphere\" or press Space to wake me up! (Or say \"exit\")");
+            renderer_set_subtitle("Say \"Hey Sphere\" or type to wake me up! (Or 'exit')");
         }
 
         char query_buf[512] = {0};
+        char typed_buf[512] = {0};
+        int typed_len = 0;
 
         while (app_running) {
             // Check for voice exit
@@ -551,18 +554,31 @@ int main(void) {
                 break;
             }
 
-            // Keyboard check
+            // Keyboard check in IDLE state
             if (_kbhit()) {
                 int c = _getch();
-                if (c == 27 || c == 'q' || c == 'Q') { // ESC or q
+                if (c == 27) { // ESC exits
                     handle_exit();
                     break;
                 }
-                if (c == ' ' || c == 'w' || c == 'W' || c == 10 || c == 13) {
+                if (c == ' ' || c == 10 || c == 13) {
                     // Space or Enter wakes the sphere into listening!
+                    typed_len = 0;
+                    typed_buf[0] = '\0';
                     renderer_set_state(STATE_LISTENING);
-                    renderer_set_status("Awake! Listening to your voice... (Speak now)");
-                    renderer_set_subtitle("Listening...");
+                    renderer_set_status("Awake! Listening... (Speak or type prompt)");
+                    renderer_set_subtitle("Listening... (Type prompt and press Enter)");
+                    audio_set_listening_mode();
+                } else if (c >= 32 && c <= 126) {
+                    // Any printable character wakes sphere and immediately buffers input
+                    typed_len = 0;
+                    typed_buf[typed_len++] = (char)c;
+                    typed_buf[typed_len] = '\0';
+                    renderer_set_state(STATE_LISTENING);
+                    renderer_set_status("Typing prompt... (Press Enter to submit)");
+                    char disp[512];
+                    snprintf(disp, sizeof(disp), "> %s_", typed_buf);
+                    renderer_set_subtitle(disp);
                     audio_set_listening_mode();
                 }
             }
@@ -570,13 +586,17 @@ int main(void) {
             // Check if awake or wake word triggered
             if (audio_check_wake_detected() || renderer_get_state() == STATE_LISTENING) {
                 // Wake detected!
-                renderer_set_state(STATE_LISTENING);
-                renderer_set_status("Awake! Listening to your voice... (Speak now)");
-                renderer_set_subtitle("Listening...");
-                audio_set_listening_mode();
+                if (renderer_get_state() != STATE_LISTENING) {
+                    typed_len = 0;
+                    typed_buf[0] = '\0';
+                    renderer_set_state(STATE_LISTENING);
+                    renderer_set_status("Awake! Listening... (Speak or type prompt)");
+                    renderer_set_subtitle("Listening... (Type prompt and press Enter)");
+                    audio_set_listening_mode();
+                }
 
-                // Check if query was already caught in same breath
-                if (audio_get_final_speech(query_buf, sizeof(query_buf))) {
+                // Check if query was already caught in same breath by voice
+                if (typed_len == 0 && audio_get_final_speech(query_buf, sizeof(query_buf))) {
                     handle_user_query(query_buf);
                     continue;
                 }
@@ -585,20 +605,68 @@ int main(void) {
                 while (app_running && renderer_get_state() == STATE_LISTENING) {
                     if (_kbhit()) {
                         int c = _getch();
-                        if (c == 27 || c == 'q' || c == 'Q') { handle_exit(); break; }
-                        if (c == 10 || c == 13) {
-                            renderer_set_state(STATE_IDLE);
-                            audio_set_standby_mode();
-                            break;
+                        if (c == 27) { // ESC
+                            if (typed_len > 0) {
+                                // Clear buffer
+                                typed_len = 0;
+                                typed_buf[0] = '\0';
+                                renderer_set_status("Awake! Listening... (Speak or type prompt)");
+                                renderer_set_subtitle("Listening... (Type prompt and press Enter)");
+                            } else {
+                                // Return to standby
+                                renderer_set_state(STATE_IDLE);
+                                audio_set_standby_mode();
+                                renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
+                                renderer_set_subtitle("Say \"Hey Sphere\" or type to wake me up! (Or 'exit')");
+                                break;
+                            }
+                        } else if (c == 10 || c == 13) { // Enter
+                            if (typed_len > 0) {
+                                char submitted[512];
+                                snprintf(submitted, sizeof(submitted), "%s", typed_buf);
+                                typed_len = 0;
+                                typed_buf[0] = '\0';
+                                handle_user_query(submitted);
+                                break;
+                            } else {
+                                renderer_set_state(STATE_IDLE);
+                                audio_set_standby_mode();
+                                renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
+                                renderer_set_subtitle("Standby. Say \"Hey Sphere\" or type to wake me up.");
+                                break;
+                            }
+                        } else if (c == 8 || c == 127) { // Backspace
+                            if (typed_len > 0) {
+                                typed_buf[--typed_len] = '\0';
+                                if (typed_len > 0) {
+                                    char disp[512];
+                                    snprintf(disp, sizeof(disp), "> %s_", typed_buf);
+                                    renderer_set_subtitle(disp);
+                                    renderer_set_status("Typing prompt... (Press Enter to submit)");
+                                } else {
+                                    renderer_set_status("Awake! Listening... (Speak or type prompt)");
+                                    renderer_set_subtitle("Listening... (Type prompt and press Enter)");
+                                }
+                            }
+                        } else if (c >= 32 && c <= 126) { // Printable characters
+                            if (typed_len + 1 < (int)sizeof(typed_buf)) {
+                                typed_buf[typed_len++] = (char)c;
+                                typed_buf[typed_len] = '\0';
+                                char disp[512];
+                                snprintf(disp, sizeof(disp), "> %s_", typed_buf);
+                                renderer_set_subtitle(disp);
+                                renderer_set_status("Typing prompt... (Press Enter to submit)");
+                            }
                         }
                     }
+
                     if (audio_check_exit_detected()) {
                         handle_exit();
                         break;
                     }
 
-                    // Check if speech phrase was finalized
-                    if (audio_get_final_speech(query_buf, sizeof(query_buf))) {
+                    // Check if voice speech phrase was finalized (only if user is not typing)
+                    if (typed_len == 0 && audio_get_final_speech(query_buf, sizeof(query_buf))) {
                         char heard[256];
                         snprintf(heard, sizeof(heard), "Heard: \"%s\"", query_buf);
                         renderer_set_status(heard);
@@ -606,20 +674,20 @@ int main(void) {
                         break;
                     }
 
-                    // Check for timeout (silence for >6s)
-                    if (audio_check_timeout_detected()) {
+                    // Check for timeout (silence for >6s) - ONLY if user has not typed anything
+                    if (typed_len == 0 && audio_check_timeout_detected()) {
                         renderer_set_state(STATE_IDLE);
                         renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-                        renderer_set_subtitle("Listening timed out. Say \"Hey Sphere\" to wake me up.");
+                        renderer_set_subtitle("Listening timed out. Say \"Hey Sphere\" or type to wake me up.");
                         audio_set_standby_mode();
                         break;
                     }
 
-                    platform_sleep(30);
+                    platform_sleep(25);
                 }
             }
 
-            platform_sleep(30);
+            platform_sleep(25);
         }
     }
 

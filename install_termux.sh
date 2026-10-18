@@ -17,8 +17,8 @@ pkg update -y || apt-get update -y
 
 # 2. Install essential packages: compiler, build tools, python, audio tools
 echo "[2/4] Installing C compiler, Python, ffmpeg, mpv, and audio tools..."
-pkg install -y clang make python python-pip git ffmpeg mpv termux-api || \
-pkg install -y clang make python git ffmpeg mpv termux-api
+pkg install -y clang make python python-pip git ffmpeg mpv termux-api espeak || \
+pkg install -y clang make python git ffmpeg mpv termux-api espeak
 
 # 3. Install Python dependencies for full song search and voice support
 echo "[3/4] Installing Python libraries (yt-dlp, SpeechRecognition)..."
