@@ -291,6 +291,35 @@ def speech_recognition_worker():
                             emit("TIMEOUT")
                             set_mode("STANDBY")
 
+                    elif mode == "SPEAKING" or speaking:
+                        try:
+                            audio = r.listen(source, timeout=0.6, phrase_time_limit=3.0)
+                            try:
+                                text = r.recognize_google(audio).strip().lower()
+                                if text:
+                                    if is_exit_phrase(text):
+                                        stop_speech()
+                                        stop_music()
+                                        emit("EXIT")
+                                        continue
+                                    if any(w in text for w in ("stop", "quiet", "shut up", "pause", "cancel", "halt")):
+                                        stop_speech()
+                                        stop_music()
+                                        emit(f"INTERRUPTED:{text}")
+                                        set_mode("STANDBY")
+                                        continue
+                                    if any(w in text for w in ("sphere", "spear", "wake up")):
+                                        stop_speech()
+                                        stop_music()
+                                        emit(f"INTERRUPTED:{text}")
+                                        emit("WAKE")
+                                        set_mode("LISTENING")
+                                        continue
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+
                     elif mode == "STANDBY":
                         audio = r.listen(source, timeout=None, phrase_time_limit=6.0)
                         try:

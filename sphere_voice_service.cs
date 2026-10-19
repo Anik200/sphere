@@ -88,6 +88,27 @@ namespace SphereVoiceEngine {
             return false;
         }
 
+        static bool IsStopPhrase(string text) {
+            if (string.IsNullOrEmpty(text)) return false;
+            string lower = text.ToLowerInvariant().Trim().Trim('.', '?', '!', ',', ' ', '"', '\'');
+            if (BargeInStopRegex.IsMatch(lower)) return true;
+            string[] stopWords = new string[] {
+                "stop", "be quiet", "shut up", "pause", "cancel", "quiet", "silence",
+                "enough", "halt", "shush", "wait", "hold on", "stop talking", "stop music",
+                "stop playing", "cut it out"
+            };
+            foreach (string w in stopWords) {
+                int idx = lower.IndexOf(w);
+                if (idx != -1) {
+                    if (idx > 0 && char.IsLetterOrDigit(lower[idx - 1])) continue;
+                    int end = idx + w.Length;
+                    if (end < lower.Length && char.IsLetterOrDigit(lower[end])) continue;
+                    return true;
+                }
+            }
+            return false;
+        }
+
         static void Main(string[] args) {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             Console.WriteLine("STATUS:INITIALIZING");
@@ -424,8 +445,8 @@ namespace SphereVoiceEngine {
                     Console.WriteLine("MODE:LISTENING");
                     Console.Out.Flush();
                 } else if (newMode == ServiceMode.Speaking) {
-                    wakeGrammar.Enabled = false;
-                    wakeDictGrammar.Enabled = false;
+                    wakeGrammar.Enabled = true;
+                    wakeDictGrammar.Enabled = true;
                     dictGrammar.Enabled = false;
                     interruptGrammar.Enabled = true;
                     Console.WriteLine("MODE:SPEAKING");
@@ -480,6 +501,8 @@ namespace SphereVoiceEngine {
                 } else if (line.Equals("CMD:STOP_SPEAK", StringComparison.OrdinalIgnoreCase)) {
                     StopMusic();
                     try { synth.SpeakAsyncCancelAll(); } catch { }
+                    Console.WriteLine("SPEAK_DONE");
+                    Console.Out.Flush();
                     SetMode(ServiceMode.Standby);
                 } else if (line.StartsWith("CMD:PLAY_MUSIC ", StringComparison.OrdinalIgnoreCase)) {
                     string musicUrl = line.Substring(15).Trim();
@@ -528,8 +551,8 @@ namespace SphereVoiceEngine {
 
             lock (modeLock) {
                 if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
-                    bool isHypStop = BargeInStopRegex.IsMatch(hypText);
                     bool isHypExit = IsExitPhrase(hypText) || BargeInExitRegex.IsMatch(hypText);
+                    bool isHypStop = IsStopPhrase(hypText);
                     string hypWakeQuery = null;
                     bool isHypWake = BargeInWakeRegex.IsMatch(hypText) || IsWakePhrase(hypText, out hypWakeQuery);
 
@@ -612,12 +635,8 @@ namespace SphereVoiceEngine {
 
             lock (modeLock) {
                 if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
-                    if (e.Result.Confidence < 0.18f) {
-                        return;
-                    }
-
                     bool isExit = IsExitPhrase(text) || BargeInExitRegex.IsMatch(text);
-                    bool isStop = BargeInStopRegex.IsMatch(text);
+                    bool isStop = IsStopPhrase(text);
                     string wakeQuery = null;
                     bool isWake = BargeInWakeRegex.IsMatch(text) || IsWakePhrase(text, out wakeQuery);
 
@@ -743,6 +762,64 @@ namespace SphereVoiceEngine {
         static void Sre_SpeechRecognitionRejected(object sender, SpeechRecognitionRejectedEventArgs e) {
             if (e.Result == null || string.IsNullOrEmpty(e.Result.Text)) return;
             lock (modeLock) {
+                if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
+                    string rejText = e.Result.Text.Trim();
+                    bool isExit = IsExitPhrase(rejText) || BargeInExitRegex.IsMatch(rejText);
+                    bool isStop = IsStopPhrase(rejText);
+                    string wakeQuery = null;
+                    bool isWake = BargeInWakeRegex.IsMatch(rejText) || IsWakePhrase(rejText, out wakeQuery);
+
+                    if (!isExit && !isStop && !isWake && e.Result.Alternates != null) {
+                        foreach (RecognizedPhrase alt in e.Result.Alternates) {
+                            string altText = alt.Text ?? "";
+                            if (IsExitPhrase(altText) || BargeInExitRegex.IsMatch(altText)) {
+                                isExit = true;
+                                break;
+                            }
+                            if (IsStopPhrase(altText)) {
+                                isStop = true;
+                                break;
+                            }
+                            if (BargeInWakeRegex.IsMatch(altText) || IsWakePhrase(altText, out wakeQuery)) {
+                                isWake = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (isExit || isStop || isWake) {
+                        try { synth.SpeakAsyncCancelAll(); } catch { }
+                        StopMusic();
+
+                        if (isExit) {
+                            Console.WriteLine("EXIT");
+                            Console.Out.Flush();
+                            return;
+                        }
+
+                        if (isWake) {
+                            Console.WriteLine("INTERRUPTED:" + rejText);
+                            Console.WriteLine("WAKE");
+                            if (!string.IsNullOrEmpty(wakeQuery) && wakeQuery.Length > 2) {
+                                Console.WriteLine("FINAL:" + wakeQuery);
+                                SetMode(ServiceMode.Standby);
+                            } else {
+                                SetMode(ServiceMode.Listening);
+                            }
+                            Console.Out.Flush();
+                            return;
+                        }
+
+                        if (isStop) {
+                            Console.WriteLine("INTERRUPTED:" + rejText);
+                            Console.Out.Flush();
+                            SetMode(ServiceMode.Standby);
+                            return;
+                        }
+                    }
+                    return;
+                }
+
                 if (currentMode == ServiceMode.Standby) {
                     string text = e.Result.Text.Trim();
                     string query;
