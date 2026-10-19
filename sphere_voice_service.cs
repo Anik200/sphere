@@ -85,10 +85,14 @@ namespace SphereVoiceEngine {
             if (result == null || result.Audio == null) return;
             try {
                 string tempPath = Path.GetTempPath();
-                string outPath = Path.Combine(tempPath, "sphere_sre_audio.wav");
-                using (FileStream fs = new FileStream(outPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite)) {
+                string srePath = Path.Combine(tempPath, "sphere_sre_audio.wav");
+                string queryPath = Path.Combine(tempPath, "sphere_query.wav");
+                using (FileStream fs = new FileStream(srePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite)) {
                     result.Audio.WriteToWaveStream(fs);
                 }
+                try {
+                    File.Copy(srePath, queryPath, true);
+                } catch { }
             } catch { }
         }
 
@@ -285,15 +289,19 @@ namespace SphereVoiceEngine {
                         if (currentMode == ServiceMode.Listening) {
                             TimeSpan elapsed = DateTime.UtcNow - wakeStartTime;
                             TimeSpan silence = DateTime.UtcNow - lastSpeechTime;
-                            if (speechHeardInListening && silence.TotalMilliseconds >= 1600 && !string.IsNullOrEmpty(lastHypothesizedText)) {
+                            if (speechHeardInListening && silence.TotalMilliseconds >= 1600 && !string.IsNullOrWhiteSpace(lastHypothesizedText)) {
                                 string finalQuery = StripWakePrefix(lastHypothesizedText);
-                                if (!string.IsNullOrEmpty(finalQuery)) {
+                                if (!string.IsNullOrWhiteSpace(finalQuery) && !IsWakeOnlyWord(finalQuery) && finalQuery.Length >= 2) {
                                     Console.WriteLine("FINAL:" + finalQuery);
                                     Console.Out.Flush();
                                     lastHypothesizedText = "";
                                     SetMode(ServiceMode.Standby);
+                                } else if (elapsed.TotalSeconds > 8.0) {
+                                    Console.WriteLine("TIMEOUT");
+                                    Console.Out.Flush();
+                                    SetMode(ServiceMode.Standby);
                                 }
-                            } else if (!speechHeardInListening && elapsed.TotalSeconds > 8.0) {
+                            } else if (elapsed.TotalSeconds > 8.0) {
                                 Console.WriteLine("TIMEOUT");
                                 Console.Out.Flush();
                                 SetMode(ServiceMode.Standby);
@@ -307,24 +315,45 @@ namespace SphereVoiceEngine {
             }
         }
 
+        static bool IsWakeOnlyWord(string text) {
+            if (string.IsNullOrWhiteSpace(text)) return true;
+            string clean = text.Trim().ToLowerInvariant().Trim('.', '?', '!', ',', ' ', '"', '\'', '-', ':');
+            string[] wakes = new string[] {
+                "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
+                "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
+                "hey fear", "hi fear", "hello fear", "her sphere", "here sphere", "hear sphere",
+                "hey spare", "the sphere", "a sphere", "hay sphere", "ay sphere", "wake up", "wake up sphere"
+            };
+            foreach (string w in wakes) {
+                if (clean == w) return true;
+            }
+            return clean.Length <= 1;
+        }
+
         static string StripWakePrefix(string text) {
-            if (string.IsNullOrEmpty(text)) return text;
+            if (string.IsNullOrEmpty(text)) return "";
             string clean = text.Trim();
             string lower = clean.ToLowerInvariant();
             string[] prefixes = new string[] {
                 "hey, sphere", "hey sphere", "hi, sphere", "hi sphere", "hello, sphere", "hello sphere",
                 "ok, sphere", "ok sphere", "okay, sphere", "okay sphere", "yo, sphere", "yo sphere",
                 "hey, spear", "hey spear", "hi, spear", "hi spear", "hello, spear", "hello spear",
-                "wake up sphere", "wake up", "her sphere", "here sphere", "hear sphere",
-                "the sphere", "a sphere", "sphere", "spear"
+                "ok spear", "okay spear", "wake up sphere", "wake up", "her sphere", "here sphere", "hear sphere",
+                "hey fear", "hi fear", "hello fear", "hey spare", "the sphere", "a sphere",
+                "hay sphere", "ay sphere", "sphere", "spear"
             };
             foreach (string p in prefixes) {
+                if (lower == p) {
+                    return "";
+                }
                 if (lower.StartsWith(p)) {
-                    string rem = clean.Substring(p.Length).Trim();
-                    while (rem.Length > 0 && (rem[0] == ',' || rem[0] == ':' || rem[0] == '.' || rem[0] == '!' || rem[0] == '?' || rem[0] == ' ' || rem[0] == '-' || rem[0] == '"' || rem[0] == '\'')) {
-                        rem = rem.Substring(1).Trim();
+                    if (lower.Length == p.Length || !char.IsLetterOrDigit(lower[p.Length])) {
+                        string rem = clean.Substring(p.Length).Trim();
+                        while (rem.Length > 0 && (rem[0] == ',' || rem[0] == ':' || rem[0] == '.' || rem[0] == '!' || rem[0] == '?' || rem[0] == ' ' || rem[0] == '-' || rem[0] == '"' || rem[0] == '\'')) {
+                            rem = rem.Substring(1).Trim();
+                        }
+                        return rem;
                     }
-                    if (rem.Length > 0) return rem;
                 }
             }
             return clean;
@@ -506,7 +535,7 @@ namespace SphereVoiceEngine {
 
                 if (newMode == ServiceMode.Standby) {
                     wakeGrammar.Enabled = true;
-                    wakeDictGrammar.Enabled = true;
+                    wakeDictGrammar.Enabled = false;
                     dictGrammar.Enabled = false;
                     interruptGrammar.Enabled = false;
                     Console.WriteLine("MODE:STANDBY");
@@ -520,7 +549,7 @@ namespace SphereVoiceEngine {
                     Console.Out.Flush();
                 } else if (newMode == ServiceMode.Speaking) {
                     wakeGrammar.Enabled = true;
-                    wakeDictGrammar.Enabled = true;
+                    wakeDictGrammar.Enabled = false;
                     dictGrammar.Enabled = false;
                     interruptGrammar.Enabled = true;
                     Console.WriteLine("MODE:SPEAKING");
@@ -664,31 +693,28 @@ namespace SphereVoiceEngine {
                 }
 
                 if (currentMode == ServiceMode.Listening) {
+                    SaveAudioIfAvailable(e.Result);
                     speechHeardInListening = true;
                     lastSpeechTime = DateTime.UtcNow;
 
                     hypText = StripWakePrefix(hypText);
+                    if (!string.IsNullOrWhiteSpace(hypText) && !IsWakeOnlyWord(hypText)) {
+                        hypText = Regex.Replace(hypText, @"\bcomputer mouth\b", "computer mouse", RegexOptions.IgnoreCase);
+                        hypText = Regex.Replace(hypText, @"\ba mouth look\b", "a mouse look", RegexOptions.IgnoreCase);
+                        hypText = Regex.Replace(hypText, @"\bthe mouth look\b", "the mouse look", RegexOptions.IgnoreCase);
+                        hypText = Regex.Replace(hypText, @"\bwhat a mouth\b", "what a mouse", RegexOptions.IgnoreCase);
+                        hypText = Regex.Replace(hypText, @"\bwhat does a mouth\b", "what does a mouse", RegexOptions.IgnoreCase);
+                        hypText = Regex.Replace(hypText, @"\blook likes\b", "look like", RegexOptions.IgnoreCase);
 
-                    hypText = Regex.Replace(hypText, @"\bcomputer mouth\b", "computer mouse", RegexOptions.IgnoreCase);
-                    hypText = Regex.Replace(hypText, @"\ba mouth look\b", "a mouse look", RegexOptions.IgnoreCase);
-                    hypText = Regex.Replace(hypText, @"\bthe mouth look\b", "the mouse look", RegexOptions.IgnoreCase);
-                    hypText = Regex.Replace(hypText, @"\bwhat a mouth\b", "what a mouse", RegexOptions.IgnoreCase);
-                    hypText = Regex.Replace(hypText, @"\bwhat does a mouth\b", "what does a mouse", RegexOptions.IgnoreCase);
-                    hypText = Regex.Replace(hypText, @"\blook likes\b", "look like", RegexOptions.IgnoreCase);
-
-                    if (hypText.Length > 0) {
-                        lastHypothesizedText = hypText;
-                        Console.WriteLine("HYP:" + hypText);
-                        Console.Out.Flush();
+                        if (hypText.Length > 0) {
+                            lastHypothesizedText = hypText;
+                            Console.WriteLine("HYP:" + hypText);
+                            Console.Out.Flush();
+                        }
                     }
                 } else if (currentMode == ServiceMode.Standby) {
-                    string remaining;
-                    if (IsWakePhrase(hypText, out remaining)) {
-                        Console.WriteLine("WAKE");
-                        Console.Out.Flush();
-                        SetMode(ServiceMode.Listening);
-                        return;
-                    }
+                    // Do not switch mode on a tentative hypothesis in Standby!
+                    // Mode transition to Listening must only occur when the wake word is confirmed in Sre_SpeechRecognized.
                     return;
                 }
             }
@@ -770,7 +796,8 @@ namespace SphereVoiceEngine {
                             return;
                         }
                         Console.WriteLine("WAKE");
-                        if (!string.IsNullOrEmpty(query)) {
+                        query = StripWakePrefix(query);
+                        if (!string.IsNullOrWhiteSpace(query) && !IsWakeOnlyWord(query) && query.Length >= 2) {
                             Console.WriteLine("FINAL:" + query);
                             SetMode(ServiceMode.Standby);
                         } else {
@@ -808,8 +835,16 @@ namespace SphereVoiceEngine {
                             text = query;
                         } else {
                             wakeStartTime = DateTime.UtcNow;
+                            lastSpeechTime = DateTime.UtcNow;
                             return;
                         }
+                    }
+
+                    text = StripWakePrefix(text);
+                    if (string.IsNullOrWhiteSpace(text) || IsWakeOnlyWord(text) || text.Length < 2) {
+                        wakeStartTime = DateTime.UtcNow;
+                        lastSpeechTime = DateTime.UtcNow;
+                        return;
                     }
 
                     text = Regex.Replace(text, @"\bcomputer mouth\b", "computer mouse", RegexOptions.IgnoreCase);
@@ -817,14 +852,11 @@ namespace SphereVoiceEngine {
                     text = Regex.Replace(text, @"\bthe mouth look\b", "the mouse look", RegexOptions.IgnoreCase);
                     text = Regex.Replace(text, @"\bwhat a mouth\b", "what a mouse", RegexOptions.IgnoreCase);
                     text = Regex.Replace(text, @"\bwhat does a mouth\b", "what does a mouse", RegexOptions.IgnoreCase);
-                    text = StripWakePrefix(text);
 
-                    if (!string.IsNullOrEmpty(text)) {
-                        lastHypothesizedText = "";
-                        Console.WriteLine("FINAL:" + text);
-                        Console.Out.Flush();
-                        SetMode(ServiceMode.Standby);
-                    }
+                    lastHypothesizedText = "";
+                    Console.WriteLine("FINAL:" + text);
+                    Console.Out.Flush();
+                    SetMode(ServiceMode.Standby);
                 }
             }
         }
@@ -895,9 +927,12 @@ namespace SphereVoiceEngine {
                     if (e.Result != null && e.Result.Alternates != null && e.Result.Alternates.Count > 0) {
                         string alt = e.Result.Alternates[0].Text ?? "";
                         if (!string.IsNullOrEmpty(alt)) {
-                            lastHypothesizedText = StripWakePrefix(alt);
-                            lastSpeechTime = DateTime.UtcNow;
-                            speechHeardInListening = true;
+                            string stripped = StripWakePrefix(alt);
+                            if (!string.IsNullOrWhiteSpace(stripped) && !IsWakeOnlyWord(stripped)) {
+                                lastHypothesizedText = stripped;
+                                lastSpeechTime = DateTime.UtcNow;
+                                speechHeardInListening = true;
+                            }
                         }
                     }
                     // Do not abort listening! Allow user to finish speaking or watchdog to finalize!
@@ -909,7 +944,8 @@ namespace SphereVoiceEngine {
                     string query;
                     if (IsWakePhrase(text, out query)) {
                         Console.WriteLine("WAKE");
-                        if (!string.IsNullOrEmpty(query)) {
+                        query = StripWakePrefix(query);
+                        if (!string.IsNullOrWhiteSpace(query) && !IsWakeOnlyWord(query) && query.Length >= 2) {
                             Console.WriteLine("FINAL:" + query);
                             SetMode(ServiceMode.Standby);
                         } else {

@@ -288,6 +288,15 @@ static void strip_wake_prefix(char *text) {
         }
     }
 
+    if (strcmp(lower, "hey sphere") == 0 || strcmp(lower, "sphere") == 0 ||
+        strcmp(lower, "hi sphere") == 0 || strcmp(lower, "hello sphere") == 0 ||
+        strcmp(lower, "ok sphere") == 0 || strcmp(lower, "okay sphere") == 0 ||
+        strcmp(lower, "spear") == 0 || strcmp(lower, "hey spear") == 0 ||
+        strcmp(lower, "wake up") == 0 || strcmp(lower, "wake up sphere") == 0) {
+        text[0] = '\0';
+        return;
+    }
+
     if (matched_sphere) {
         if (strncmp(p, "please ", 7) == 0) p += 7;
         while (*p && isspace((unsigned char)*p)) p++;
@@ -300,6 +309,8 @@ static void strip_wake_prefix(char *text) {
 
         if (strlen(remaining) > 0) {
             memmove(text, remaining, strlen(remaining) + 1);
+        } else {
+            text[0] = '\0';
         }
     }
 }
@@ -323,6 +334,16 @@ static void handle_user_query(const char *raw_query) {
     if (qlen == 0) return;
 
     strip_wake_prefix(query);
+
+    if (strlen(query) == 0) {
+        // Only the wake word was spoken. Seamlessly transition to listening mode!
+        renderer_set_input_buffer("");
+        renderer_set_state(STATE_LISTENING);
+        renderer_set_status("Awake! Listening... (Speak or type prompt)");
+        renderer_set_subtitle("Listening... (Type prompt and press Enter)");
+        audio_set_listening_mode();
+        return;
+    }
 
     char lower_query[512];
     to_lower_str(query, lower_query, sizeof(lower_query));

@@ -24,8 +24,18 @@ def get_locale_language():
         return "en-CA"
     return "en-US"
 
+import re
+
+def clean_transcription(text: str) -> str:
+    if not text:
+        return ""
+    text = text.strip()
+    pattern = r"^(hey\s+sphere|sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere|okay\s+sphere|wake\s+up\s+sphere|wake\s+up)[\s,.:!?-]*"
+    cleaned = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+    return cleaned
+
 def transcribe_wav(wav_path):
-    if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1000:
+    if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 200:
         return ""
     r = sr.Recognizer()
     r.dynamic_energy_threshold = False
@@ -45,14 +55,15 @@ def transcribe_wav(wav_path):
             try:
                 text = r.recognize_google(audio, language=lang).strip()
                 if text and len(text) > 0:
-                    return text
+                    return clean_transcription(text)
             except sr.UnknownValueError:
                 continue
             except Exception:
                 break
 
         try:
-            return r.recognize_google(audio).strip()
+            raw = r.recognize_google(audio).strip()
+            return clean_transcription(raw)
         except Exception:
             return ""
     except Exception:

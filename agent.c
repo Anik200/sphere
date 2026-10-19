@@ -125,11 +125,28 @@ static int query_sphere_ai_model(const char *query, const char *context, char *o
     }
 
     const char *py_bin = "python";
-    static const char *s_agent_py = NULL;
-    if (!s_agent_py) {
-        if (system("python --version >nul 2>&1") == 0) s_agent_py = "python";
-        else if (system("py -3 --version >nul 2>&1") == 0) s_agent_py = "py -3";
-        else s_agent_py = "python";
+    static char s_agent_py[MAX_PATH] = {0};
+    if (s_agent_py[0] == '\0') {
+        if (system("python --version >nul 2>&1") == 0) {
+            strcpy(s_agent_py, "python");
+        } else if (system("py -3 --version >nul 2>&1") == 0) {
+            strcpy(s_agent_py, "py -3");
+        } else {
+            const char *local_app = getenv("LOCALAPPDATA");
+            int found = 0;
+            if (local_app) {
+                char cand[MAX_PATH];
+                for (int v = 14; v >= 8; v--) {
+                    snprintf(cand, sizeof(cand), "%s\\Programs\\Python\\Python3%d\\python.exe", local_app, v);
+                    if (_access(cand, 0) == 0) {
+                        snprintf(s_agent_py, sizeof(s_agent_py), "\"%s\"", cand);
+                        found = 1;
+                        break;
+                    }
+                }
+            }
+            if (!found) strcpy(s_agent_py, "python");
+        }
     }
     py_bin = s_agent_py;
 
