@@ -71,23 +71,40 @@ if %ERRORLEVEL% equ 0 (
     echo Note: Live AI model routing and music streaming require Python 3.8+
 )
 
-:: 4. Check Optional Ollama Small AI Model
-echo [4/5] Checking Small AI Model Engine...
+:: 4. Setup Small AI Model Engine
+echo [4/5] Setting up Small AI Model Engine...
 set "OLLAMA_EXE="
 where ollama >nul 2>&1
 if %ERRORLEVEL% equ 0 (
     set "OLLAMA_EXE=ollama"
 ) else if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" (
     set "OLLAMA_EXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
+) else if exist "%ProgramFiles%\Ollama\ollama.exe" (
+    set "OLLAMA_EXE=%ProgramFiles%\Ollama\ollama.exe"
+)
+
+if "%OLLAMA_EXE%"=="" (
+    echo Ollama not detected. Attempting automated installation via winget...
+    where winget >nul 2>&1
+    if %ERRORLEVEL% equ 0 (
+        winget install -e --id Ollama.Ollama --accept-source-agreements --accept-package-agreements --silent >nul 2>&1
+    )
+    if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" (
+        set "OLLAMA_EXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
+    ) else if exist "%ProgramFiles%\Ollama\ollama.exe" (
+        set "OLLAMA_EXE=%ProgramFiles%\Ollama\ollama.exe"
+    )
 )
 
 if not "%OLLAMA_EXE%"=="" (
-    echo [OK] Found Ollama at %OLLAMA_EXE%
-    echo Checking/pulling ultra-fast small AI model qwen2.5:0.5b...
-    "%OLLAMA_EXE%" pull qwen2.5:0.5b 2>nul
+    echo [OK] Found Ollama at: %OLLAMA_EXE%
+    echo Starting Ollama background engine...
+    start "" /B "%OLLAMA_EXE%" serve >nul 2>&1
+    ping 127.0.0.1 -n 3 >nul
+    echo Pulling ultra-fast small AI model qwen2.5:0.5b...
+    "%OLLAMA_EXE%" pull qwen2.5:0.5b
 ) else (
-    echo [INFO] Ollama not found. SphereAI will use native offline reasoning and live web fetching.
-    echo To install Ollama later for local AI model support: winget install Ollama.Ollama
+    echo [INFO] Ollama setup skipped. SphereAI will automatically use high-speed cloud AI model fallback.
 )
 
 :: 5. Compile Everything and Save Compiled Executables

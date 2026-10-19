@@ -663,8 +663,28 @@ static void *voice_reader_thread(void *lpParam) {
                         if (target_wav) {
 #ifdef _WIN32
                             DeleteFileA(res_file);
+
+                            char exe_dir[MAX_PATH] = {0};
+                            GetModuleFileNameA(NULL, exe_dir, MAX_PATH);
+                            char *last_bs = strrchr(exe_dir, '\\');
+                            if (last_bs) *last_bs = '\0';
+                            else strcpy(exe_dir, ".");
+
+                            char transcribe_path[MAX_PATH];
+                            snprintf(transcribe_path, sizeof(transcribe_path), "%s\\transcribe.py", exe_dir);
+                            if (_access(transcribe_path, 0) != 0) {
+                                strcpy(transcribe_path, "transcribe.py");
+                            }
+
+                            const char *py_bin = "python";
+                            if (system("python --version >nul 2>&1") != 0) {
+                                if (system("py -3 --version >nul 2>&1") == 0) {
+                                    py_bin = "py -3";
+                                }
+                            }
+
                             char cmd[MAX_PATH * 3];
-                            snprintf(cmd, sizeof(cmd), "python transcribe.py \"%s\" \"%s\"", target_wav, res_file);
+                            snprintf(cmd, sizeof(cmd), "%s \"%s\" \"%s\" \"%s\"", py_bin, transcribe_path, target_wav, res_file);
 
                             STARTUPINFOA si;
                             PROCESS_INFORMATION pi;
@@ -793,33 +813,19 @@ int audio_init(void) {
     loopback_running = 1;
     hLoopbackThread = CreateThread(NULL, 0, wasapi_loopback_thread, NULL, 0, NULL);
 
-    if (_access("sphere_voice_service.exe", 0) != 0) {
+    char exe_dir[MAX_PATH] = {0};
+    GetModuleFileNameA(NULL, exe_dir, MAX_PATH);
+    char *last_bs = strrchr(exe_dir, '\\');
+    if (last_bs) *last_bs = '\0';
+    else strcpy(exe_dir, ".");
+
+    char voice_exe[MAX_PATH];
+    snprintf(voice_exe, sizeof(voice_exe), "%s\\sphere_voice_service.exe", exe_dir);
+
+    if (_access(voice_exe, 0) != 0 && _access("sphere_voice_service.exe", 0) != 0) {
         system("C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /optimize+ "
                "/reference:C:\\Windows\\Microsoft.NET\\assembly\\GAC_MSIL\\System.Speech\\v4.0_4.0.0.0__31bf3856ad364e35\\System.Speech.dll "
                "/out:sphere_voice_service.exe sphere_voice_service.cs >nul 2>&1");
-    }
-
-    WAVEFORMATEX pFormat;
-    pFormat.wFormatTag = WAVE_FORMAT_PCM;
-    pFormat.nChannels = 1;
-    pFormat.nSamplesPerSec = SAMPLE_RATE;
-    pFormat.wBitsPerSample = 16;
-    pFormat.nBlockAlign = 2;
-    pFormat.nAvgBytesPerSec = SAMPLE_RATE * 2;
-    pFormat.cbSize = 0;
-
-    MMRESULT res = waveInOpen(&hWaveIn, WAVE_MAPPER, &pFormat, (DWORD_PTR)waveInProc, 0, CALLBACK_FUNCTION);
-    if (res == MMSYSERR_NOERROR) {
-        for (int i = 0; i < 2; i++) {
-            memset(&waveHeaders[i], 0, sizeof(WAVEHDR));
-            waveHeaders[i].lpData = (LPSTR)audio_buffers[i];
-            waveHeaders[i].dwBufferLength = sizeof(audio_buffers[i]);
-            waveInPrepareHeader(hWaveIn, &waveHeaders[i], sizeof(WAVEHDR));
-            waveInAddBuffer(hWaveIn, &waveHeaders[i], sizeof(WAVEHDR));
-        }
-        waveInStart(hWaveIn);
-    } else {
-        hWaveIn = NULL;
     }
 
     SECURITY_ATTRIBUTES saAttr;
@@ -851,8 +857,10 @@ int audio_init(void) {
     si.wShowWindow = SW_HIDE;
 
     DWORD parent_pid = GetCurrentProcessId();
-    char cmdLine[128];
-    if (_access("sphere_voice_service.exe", 0) == 0) {
+    char cmdLine[MAX_PATH * 2];
+    if (_access(voice_exe, 0) == 0) {
+        snprintf(cmdLine, sizeof(cmdLine), "\"%s\" %lu", voice_exe, parent_pid);
+    } else if (_access("sphere_voice_service.exe", 0) == 0) {
         snprintf(cmdLine, sizeof(cmdLine), "sphere_voice_service.exe %lu", parent_pid);
     } else {
         snprintf(cmdLine, sizeof(cmdLine), "python sphere_voice_service.py %lu", parent_pid);
@@ -863,6 +871,29 @@ int audio_init(void) {
     CloseHandle(hChildStd_IN_Rd);
 
     if (!success) {
+        WAVEFORMATEX pFormat;
+        pFormat.wFormatTag = WAVE_FORMAT_PCM;
+        pFormat.nChannels = 1;
+        pFormat.nSamplesPerSec = SAMPLE_RATE;
+        pFormat.wBitsPerSample = 16;
+        pFormat.nBlockAlign = 2;
+        pFormat.nAvgBytesPerSec = SAMPLE_RATE * 2;
+        pFormat.cbSize = 0;
+
+        MMRESULT res = waveInOpen(&hWaveIn, WAVE_MAPPER, &pFormat, (DWORD_PTR)waveInProc, 0, CALLBACK_FUNCTION);
+        if (res == MMSYSERR_NOERROR) {
+            for (int i = 0; i < 2; i++) {
+                memset(&waveHeaders[i], 0, sizeof(WAVEHDR));
+                waveHeaders[i].lpData = (LPSTR)audio_buffers[i];
+                waveHeaders[i].dwBufferLength = sizeof(audio_buffers[i]);
+                waveInPrepareHeader(hWaveIn, &waveHeaders[i], sizeof(WAVEHDR));
+                waveInAddBuffer(hWaveIn, &waveHeaders[i], sizeof(WAVEHDR));
+            }
+            waveInStart(hWaveIn);
+        } else {
+            hWaveIn = NULL;
+        }
+
         CloseHandle(hChildStd_OUT_Rd);
         CloseHandle(hChildStd_IN_Wr);
         hChildStd_OUT_Rd = NULL;

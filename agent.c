@@ -112,6 +112,25 @@ static int query_sphere_ai_model(const char *query, const char *context, char *o
     }
     safe_query[qlen] = '\0';
 
+    char exe_dir[MAX_PATH] = {0};
+    GetModuleFileNameA(NULL, exe_dir, MAX_PATH);
+    char *last_bs = strrchr(exe_dir, '\\');
+    if (last_bs) *last_bs = '\0';
+    else strcpy(exe_dir, ".");
+
+    char script_path[MAX_PATH];
+    snprintf(script_path, sizeof(script_path), "%s\\sphere_ai_model.py", exe_dir);
+    if (_access(script_path, 0) != 0) {
+        strcpy(script_path, "sphere_ai_model.py");
+    }
+
+    const char *py_bin = "python";
+    if (system("python --version >nul 2>&1") != 0) {
+        if (system("py -3 --version >nul 2>&1") == 0) {
+            py_bin = "py -3";
+        }
+    }
+
     char py_cmd[MAX_PATH * 4];
     if (context && strlen(context) > 0) {
         char safe_ctx[1024];
@@ -121,9 +140,9 @@ static int query_sphere_ai_model(const char *query, const char *context, char *o
             safe_ctx[clen++] = context[i];
         }
         safe_ctx[clen] = '\0';
-        snprintf(py_cmd, sizeof(py_cmd), "python sphere_ai_model.py \"%s\" \"%s\" \"%s\"", safe_query, res_file, safe_ctx);
+        snprintf(py_cmd, sizeof(py_cmd), "%s \"%s\" \"%s\" \"%s\" \"%s\"", py_bin, script_path, safe_query, res_file, safe_ctx);
     } else {
-        snprintf(py_cmd, sizeof(py_cmd), "python sphere_ai_model.py \"%s\" \"%s\"", safe_query, res_file);
+        snprintf(py_cmd, sizeof(py_cmd), "%s \"%s\" \"%s\" \"%s\"", py_bin, script_path, safe_query, res_file);
     }
 
     STARTUPINFOA si;
@@ -134,7 +153,7 @@ static int query_sphere_ai_model(const char *query, const char *context, char *o
     si.wShowWindow = SW_HIDE;
 
     if (CreateProcessA(NULL, py_cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        DWORD wr = WaitForSingleObject(pi.hProcess, 15000);
+        DWORD wr = WaitForSingleObject(pi.hProcess, 22000);
         if (wr == WAIT_TIMEOUT) {
             TerminateProcess(pi.hProcess, 1);
         }

@@ -6,6 +6,7 @@ import urllib.parse
 import urllib.request
 import subprocess
 import time
+import shutil
 
 FETCH_PATTERNS = [
     r"\b(weather|forecast|temperature|rain|snow|humidity)\b",
@@ -109,6 +110,27 @@ def fetch_live_info(query: str) -> str:
 
     return ""
 
+def find_ollama_binary() -> str:
+    p = shutil.which("ollama")
+    if p:
+        return p
+    local_app = os.environ.get("LOCALAPPDATA", "")
+    if local_app:
+        cand = os.path.join(local_app, "Programs", "Ollama", "ollama.exe")
+        if os.path.exists(cand):
+            return cand
+    prog_files = os.environ.get("ProgramFiles", "")
+    if prog_files:
+        cand = os.path.join(prog_files, "Ollama", "ollama.exe")
+        if os.path.exists(cand):
+            return cand
+    prog_files_x86 = os.environ.get("ProgramFiles(x86)", "")
+    if prog_files_x86:
+        cand = os.path.join(prog_files_x86, "Ollama", "ollama.exe")
+        if os.path.exists(cand):
+            return cand
+    return ""
+
 def ensure_ollama_running() -> bool:
     try:
         req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "SphereAI/2.0"})
@@ -117,15 +139,19 @@ def ensure_ollama_running() -> bool:
     except Exception:
         pass
 
-    # Attempt to auto-start ollama serve on Windows
-    ollama_path = r"C:\Users\hp\AppData\Local\Programs\Ollama\ollama.exe"
-    if os.path.exists(ollama_path):
+    ollama_path = find_ollama_binary()
+    if ollama_path and os.path.exists(ollama_path):
         try:
-            subprocess.Popen([ollama_path, "serve"], creationflags=0x08000000)
-            time.sleep(1.0)
-            req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "SphereAI/2.0"})
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
-                return True
+            flags = 0x08000000 if os.name == "nt" else 0
+            subprocess.Popen([ollama_path, "serve"], creationflags=flags)
+            for _ in range(6):
+                time.sleep(0.5)
+                try:
+                    req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "SphereAI/2.0"})
+                    with urllib.request.urlopen(req, timeout=0.8) as resp:
+                        return True
+                except Exception:
+                    pass
         except Exception:
             pass
     return False
@@ -151,33 +177,66 @@ def get_best_ollama_model() -> str:
         pass
     return "qwen2.5:0.5b"
 
-def generate_ai_answer(prompt: str, model_name: str) -> str:
-    if not ensure_ollama_running():
-        return ""
+def query_fallback_ai_model(prompt: str) -> str:
+    try:
+        encoded = urllib.parse.quote(prompt)
+        url = f"https://text.pollinations.ai/{encoded}?model=openai"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=6.0) as resp:
+            ans = resp.read().decode("utf-8", errors="ignore").strip()
+            if ans and len(ans) > 3:
+                ans = ans.strip('"').strip("'").strip()
+                ans = re.sub(r"[\*#`_]", "", ans)
+                return ans
+    except Exception:
+        pass
 
     try:
-        url = "http://localhost:11434/api/generate"
-        payload = {
-            "model": model_name,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": 0.65,
-                "num_predict": 120,
-                "top_p": 0.9
-            }
-        }
-        data_bytes = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=10.0) as resp:
-            res_json = json.loads(resp.read().decode("utf-8", errors="ignore"))
-            ans = res_json.get("response", "").strip()
-            # Clean up markdown tags or quotes
-            ans = ans.strip('"').strip("'").strip()
-            ans = re.sub(r"[\*#`_]", "", ans)
-            return ans
+        url = f"https://api.duckduckgo.com/?q={urllib.parse.quote(prompt)}&format=json&no_html=1"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=4.0) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            ans = data.get("AbstractText", "") or data.get("Answer", "")
+            if ans and len(ans) > 3:
+                return ans.strip()
     except Exception:
-        return ""
+        pass
+
+    return ""
+
+def generate_ai_answer(prompt: str, model_name: str) -> str:
+    # 1. First priority: Local Ollama model
+    if ensure_ollama_running():
+        try:
+            url = "http://localhost:11434/api/generate"
+            payload = {
+                "model": model_name,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": 0.65,
+                    "num_predict": 120,
+                    "top_p": 0.9
+                }
+            }
+            data_bytes = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=12.0) as resp:
+                res_json = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                ans = res_json.get("response", "").strip()
+                ans = ans.strip('"').strip("'").strip()
+                ans = re.sub(r"[\*#`_]", "", ans)
+                if ans and len(ans) > 3:
+                    return ans
+        except Exception:
+            pass
+
+    # 2. Second priority: High-speed cloud AI model fallback
+    fallback = query_fallback_ai_model(prompt)
+    if fallback and len(fallback) > 3:
+        return fallback
+
+    return ""
 
 def process_query(query: str, existing_context: str = "") -> dict:
     needs_fetch = should_fetch(query)

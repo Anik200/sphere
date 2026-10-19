@@ -27,6 +27,7 @@ namespace SphereVoiceEngine {
         static DateTime lastSpeechTime = DateTime.UtcNow;
         static DateTime wakeStartTime = DateTime.UtcNow;
         static bool speechHeardInListening = false;
+        static string lastHypothesizedText = "";
         static int lastAudioLevel = 0;
         static DateTime lastAmpSendTime = DateTime.UtcNow;
         static string currentSpeakingText = "";
@@ -155,17 +156,51 @@ namespace SphereVoiceEngine {
                     }
                 }
 
-                CultureInfo culture = new CultureInfo("en-US");
-                try {
-                    sre = new SpeechRecognitionEngine(culture);
-                } catch {
+                RecognizerInfo recognizer = null;
+                foreach (RecognizerInfo r in SpeechRecognitionEngine.InstalledRecognizers()) {
+                    if (r.Culture.Name.Equals("en-US", StringComparison.OrdinalIgnoreCase)) {
+                        recognizer = r;
+                        break;
+                    }
+                }
+                if (recognizer == null) {
+                    foreach (RecognizerInfo r in SpeechRecognitionEngine.InstalledRecognizers()) {
+                        if (r.Culture.Name.StartsWith("en", StringComparison.OrdinalIgnoreCase)) {
+                            recognizer = r;
+                            break;
+                        }
+                    }
+                }
+                if (recognizer == null && SpeechRecognitionEngine.InstalledRecognizers().Count > 0) {
+                    recognizer = SpeechRecognitionEngine.InstalledRecognizers()[0];
+                }
+
+                if (recognizer != null) {
+                    sre = new SpeechRecognitionEngine(recognizer.Id);
+                } else {
                     sre = new SpeechRecognitionEngine();
                 }
 
-                sre.SetInputToDefaultAudioDevice();
+                CultureInfo recCulture = sre.RecognizerInfo.Culture;
+
+                bool inputConfigured = false;
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    try {
+                        sre.SetInputToDefaultAudioDevice();
+                        inputConfigured = true;
+                        break;
+                    } catch {
+                        Thread.Sleep(250);
+                    }
+                }
+                if (!inputConfigured) {
+                    Console.WriteLine("WARNING:DEFAULT_AUDIO_DEVICE_UNAVAILABLE");
+                }
+
                 try {
-                    sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(850);
-                    sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(1000);
+                    sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(1600);
+                    sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(1900);
+                    sre.InitialSilenceTimeout = TimeSpan.FromSeconds(8.0);
                 } catch { }
 
                 Choices wakeChoices = new Choices(new string[] {
@@ -181,10 +216,11 @@ namespace SphereVoiceEngine {
                     "play", "play song", "play music", "hey sphere play", "sphere play"
                 });
                 GrammarBuilder wakeGb = new GrammarBuilder(wakeChoices);
+                wakeGb.Culture = recCulture;
                 wakeGrammar = new Grammar(wakeGb);
                 wakeGrammar.Name = "WakeGrammar";
                 wakeGrammar.Weight = 1.0f;
-                sre.LoadGrammar(wakeGrammar);
+                try { sre.LoadGrammar(wakeGrammar); } catch { }
 
                 Choices wakePrefixChoices = new Choices(new string[] {
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
@@ -193,16 +229,17 @@ namespace SphereVoiceEngine {
                     "hey sphere play", "sphere play", "play"
                 });
                 GrammarBuilder wakeDictGb = new GrammarBuilder();
+                wakeDictGb.Culture = recCulture;
                 wakeDictGb.Append(wakePrefixChoices);
                 wakeDictGb.AppendDictation();
                 wakeDictGrammar = new Grammar(wakeDictGb);
                 wakeDictGrammar.Name = "WakeDictGrammar";
                 wakeDictGrammar.Weight = 0.5f;
-                sre.LoadGrammar(wakeDictGrammar);
+                try { sre.LoadGrammar(wakeDictGrammar); } catch { }
 
                 dictGrammar = new DictationGrammar();
                 dictGrammar.Name = "DictationGrammar";
-                sre.LoadGrammar(dictGrammar);
+                try { sre.LoadGrammar(dictGrammar); } catch { }
                 dictGrammar.Enabled = false;
 
                 Choices interruptChoices = new Choices(new string[] {
@@ -221,9 +258,10 @@ namespace SphereVoiceEngine {
                     "hey sphere exit", "sphere exit", "hey sphere quit", "sphere quit", "hey sphere goodbye"
                 });
                 GrammarBuilder intGb = new GrammarBuilder(interruptChoices);
+                intGb.Culture = recCulture;
                 interruptGrammar = new Grammar(intGb);
                 interruptGrammar.Name = "InterruptGrammar";
-                sre.LoadGrammar(interruptGrammar);
+                try { sre.LoadGrammar(interruptGrammar); } catch { }
                 interruptGrammar.Enabled = false;
 
                 sre.SpeechHypothesized += Sre_SpeechHypothesized;
@@ -242,11 +280,20 @@ namespace SphereVoiceEngine {
                 cmdThread.Start();
 
                 while (true) {
-                    Thread.Sleep(100);
+                    Thread.Sleep(80);
                     lock (modeLock) {
                         if (currentMode == ServiceMode.Listening) {
                             TimeSpan elapsed = DateTime.UtcNow - wakeStartTime;
-                            if (!speechHeardInListening && elapsed.TotalSeconds > 7.0) {
+                            TimeSpan silence = DateTime.UtcNow - lastSpeechTime;
+                            if (speechHeardInListening && silence.TotalMilliseconds >= 1600 && !string.IsNullOrEmpty(lastHypothesizedText)) {
+                                string finalQuery = StripWakePrefix(lastHypothesizedText);
+                                if (!string.IsNullOrEmpty(finalQuery)) {
+                                    Console.WriteLine("FINAL:" + finalQuery);
+                                    Console.Out.Flush();
+                                    lastHypothesizedText = "";
+                                    SetMode(ServiceMode.Standby);
+                                }
+                            } else if (!speechHeardInListening && elapsed.TotalSeconds > 8.0) {
                                 Console.WriteLine("TIMEOUT");
                                 Console.Out.Flush();
                                 SetMode(ServiceMode.Standby);
@@ -453,7 +500,9 @@ namespace SphereVoiceEngine {
             lock (modeLock) {
                 currentMode = newMode;
                 wakeStartTime = DateTime.UtcNow;
+                lastSpeechTime = DateTime.UtcNow;
                 speechHeardInListening = false;
+                lastHypothesizedText = "";
 
                 if (newMode == ServiceMode.Standby) {
                     wakeGrammar.Enabled = true;
@@ -616,8 +665,7 @@ namespace SphereVoiceEngine {
 
                 if (currentMode == ServiceMode.Listening) {
                     speechHeardInListening = true;
-
-                    if (e.Result.Confidence < 0.18f && hypText.Length < 7) return;
+                    lastSpeechTime = DateTime.UtcNow;
 
                     hypText = StripWakePrefix(hypText);
 
@@ -629,6 +677,7 @@ namespace SphereVoiceEngine {
                     hypText = Regex.Replace(hypText, @"\blook likes\b", "look like", RegexOptions.IgnoreCase);
 
                     if (hypText.Length > 0) {
+                        lastHypothesizedText = hypText;
                         Console.WriteLine("HYP:" + hypText);
                         Console.Out.Flush();
                     }
@@ -771,6 +820,7 @@ namespace SphereVoiceEngine {
                     text = StripWakePrefix(text);
 
                     if (!string.IsNullOrEmpty(text)) {
+                        lastHypothesizedText = "";
                         Console.WriteLine("FINAL:" + text);
                         Console.Out.Flush();
                         SetMode(ServiceMode.Standby);
@@ -842,13 +892,15 @@ namespace SphereVoiceEngine {
 
                 if (currentMode == ServiceMode.Listening) {
                     SaveAudioIfAvailable(e.Result);
-                    string altText = (e.Result != null && !string.IsNullOrEmpty(e.Result.Text)) ? e.Result.Text : "";
                     if (e.Result != null && e.Result.Alternates != null && e.Result.Alternates.Count > 0) {
-                        altText = e.Result.Alternates[0].Text ?? altText;
+                        string alt = e.Result.Alternates[0].Text ?? "";
+                        if (!string.IsNullOrEmpty(alt)) {
+                            lastHypothesizedText = StripWakePrefix(alt);
+                            lastSpeechTime = DateTime.UtcNow;
+                            speechHeardInListening = true;
+                        }
                     }
-                    Console.WriteLine("FINAL:" + altText);
-                    Console.Out.Flush();
-                    SetMode(ServiceMode.Standby);
+                    // Do not abort listening! Allow user to finish speaking or watchdog to finalize!
                     return;
                 }
 
