@@ -27,6 +27,10 @@
 #define COLOR_LIME          "\033[38;5;118m"
 #define COLOR_DIM           "\033[38;5;244m"
 #define COLOR_WHITE_BOLD    "\033[1;37m"
+#define COLOR_BORDER        "\033[38;5;238m"
+#define COLOR_PILL_BG       "\033[48;5;236m"
+#define COLOR_TRACK_BG      "\033[38;5;238m"
+#define COLOR_PILL_TEXT     "\033[38;5;253m"
 
 typedef enum {
     STATE_IDLE,

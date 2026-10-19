@@ -592,17 +592,102 @@ void renderer_render_frame(void) {
         }
     }
 
-    char sound_meter[32] = {0};
-    int meter_bars = (int)(sound_energy * 10.0f);
-    if (meter_bars > 10) meter_bars = 10;
-    int b = 0;
-    for (; b < meter_bars; b++) sound_meter[b] = '=';
-    for (; b < 10; b++) sound_meter[b] = '-';
-    sound_meter[10] = '\0';
+    const char *badge_name = "STANDBY";
+    const char *badge_color = (custom_color[0] != '\0') ? custom_color : COLOR_GREEN;
+    const char *badge_bg = COLOR_PILL_BG;
+    const char *meter_label = "MIC";
 
-    int pos = sprintf(frame_buffer, "\033[H\033[2K  %sSphereAI%s | %s%s\033[0m | Sound: [%s%s%s]\n",
-                      COLOR_WHITE_BOLD, COLOR_RESET, active_target_color, current_status,
-                      active_target_color, sound_meter, COLOR_RESET);
+    switch (state) {
+        case STATE_LISTENING:
+            badge_name = "LISTENING";
+            badge_color = COLOR_PURPLE_BRIGHT;
+            badge_bg = "\033[48;5;53m";
+            meter_label = "MIC";
+            break;
+        case STATE_THINKING:
+            badge_name = "THINKING";
+            badge_color = COLOR_CYAN;
+            badge_bg = "\033[48;5;24m";
+            meter_label = "MIC";
+            break;
+        case STATE_SPEAKING:
+            badge_name = "SPEAKING";
+            badge_color = COLOR_GREEN_EMERALD;
+            badge_bg = "\033[48;5;28m";
+            meter_label = "AUDIO";
+            break;
+        case STATE_HAPPY:
+            badge_name = "JOYFUL";
+            badge_color = COLOR_GOLD;
+            badge_bg = "\033[48;5;94m";
+            meter_label = "AUDIO";
+            break;
+        case STATE_MUSIC:
+            badge_name = "MUSIC";
+            badge_color = COLOR_PINK;
+            badge_bg = "\033[48;5;53m";
+            meter_label = "AUDIO";
+            break;
+        case STATE_IDLE:
+        default:
+            badge_name = "STANDBY";
+            badge_color = (custom_color[0] != '\0') ? custom_color : COLOR_GREEN;
+            badge_bg = COLOR_PILL_BG;
+            meter_label = "MIC";
+            break;
+    }
+
+    int meter_len = 10;
+    int filled = (int)(sound_energy * (float)meter_len);
+    if (filled < 0) filled = 0;
+    if (filled > meter_len) filled = meter_len;
+    int empty = meter_len - filled;
+    int pct = (int)(sound_energy * 100.0f);
+    if (pct < 0) pct = 0;
+    if (pct > 99) pct = 99;
+
+    char meter_str[256];
+    int m_pos = snprintf(meter_str, sizeof(meter_str),
+                         COLOR_PILL_BG " " COLOR_DIM "%s" COLOR_RESET
+                         COLOR_PILL_BG " \xE2\x96\x95%s",
+                         meter_label, badge_color);
+    for (int i = 0; i < filled; i++) {
+        m_pos += snprintf(&meter_str[m_pos], sizeof(meter_str) - m_pos, "\xE2\x96\x88");
+    }
+    m_pos += snprintf(&meter_str[m_pos], sizeof(meter_str) - m_pos, COLOR_TRACK_BG);
+    for (int i = 0; i < empty; i++) {
+        m_pos += snprintf(&meter_str[m_pos], sizeof(meter_str) - m_pos, "\xE2\x96\x91");
+    }
+    m_pos += snprintf(&meter_str[m_pos], sizeof(meter_str) - m_pos,
+                      COLOR_RESET COLOR_PILL_BG "\xE2\x96\x8F " COLOR_WHITE_BOLD "%2d%%" COLOR_RESET COLOR_PILL_BG " " COLOR_RESET,
+                      pct);
+
+    int vis_left_len = 2 + 1 + 1 + 8 + 2 + 1 + 1 + (int)strlen(badge_name) + 2 + 5;
+    int vis_meter_len = 1 + (int)strlen(meter_label) + 1 + 1 + meter_len + 1 + 1 + 3 + 1;
+    int max_status_len = term_cols - vis_left_len - vis_meter_len - 1;
+    if (max_status_len < 6) max_status_len = 6;
+
+    char status_clipped[256];
+    snprintf(status_clipped, sizeof(status_clipped), "%.*s", max_status_len, current_status);
+    int status_vis_len = (int)strlen(status_clipped);
+    int spaces = term_cols - vis_left_len - status_vis_len - vis_meter_len;
+    if (spaces < 1) spaces = 1;
+
+    int pos = sprintf(frame_buffer,
+                      "\033[H\033[2K  " COLOR_WHITE_BOLD "\xE2\x97\x86 SphereAI" COLOR_RESET
+                      "  %s%s \xE2\x97\x8F %s " COLOR_RESET
+                      " " COLOR_BORDER "\xE2\x94\x82" COLOR_RESET
+                      " " COLOR_DIM "\xE2\x80\xBA" COLOR_RESET
+                      " %s%*s%s\n",
+                      badge_bg, badge_color, badge_name,
+                      status_clipped, spaces, "", meter_str);
+
+    int rule_len = term_cols > 6 ? term_cols - 4 : 40;
+    pos += sprintf(&frame_buffer[pos], "\033[2K  " COLOR_BORDER);
+    for (int i = 0; i < rule_len; i++) {
+        pos += sprintf(&frame_buffer[pos], "\xE2\x94\x80");
+    }
+    pos += sprintf(&frame_buffer[pos], COLOR_RESET "\n");
 
     float center_x = draw_w / 2.0f;
     float center_y = draw_h / 2.0f;
@@ -612,8 +697,11 @@ void renderer_render_frame(void) {
 
     const char *current_pen = NULL;
 
+    int pad_left = (term_cols - draw_w) / 2;
+    if (pad_left < 2) pad_left = 2;
+
     for (int y = 0; y < draw_h; y++) {
-        pos += sprintf(&frame_buffer[pos], "\033[2K  ");
+        pos += sprintf(&frame_buffer[pos], "\033[2K%*s", pad_left, "");
         for (int x = 0; x < draw_w; x++) {
             unsigned char mask = braille_grid[y][x];
             if (mask == 0) {
@@ -652,31 +740,61 @@ void renderer_render_frame(void) {
 
     pos += sprintf(&frame_buffer[pos], "%s\033[2K\n", COLOR_RESET);
 
-    if (current_subtitle[0] != '\0') {
-        int len = (int)strlen(current_subtitle);
+    if (current_input_buffer[0] != '\0') {
+        pos += sprintf(&frame_buffer[pos], "\033[2K  " COLOR_CYAN "User" COLOR_RESET " " COLOR_DIM "\xE2\x80\xBA" COLOR_RESET " " COLOR_WHITE_BOLD "%s\033[7m \033[0m\n", current_input_buffer);
+    } else if (current_subtitle[0] != '\0') {
+        const char *tag = "Sphere";
+        const char *tag_color = COLOR_PURPLE;
+        const char *text = current_subtitle;
+        if (strncmp(current_subtitle, "Sphere: ", 8) == 0) {
+            tag = "Sphere";
+            tag_color = COLOR_PURPLE;
+            text = current_subtitle + 8;
+        } else if (strncmp(current_subtitle, "> ", 2) == 0) {
+            tag = "User";
+            tag_color = COLOR_CYAN;
+            text = current_subtitle + 2;
+        } else if (strncmp(current_subtitle, "Listening: \"", 12) == 0) {
+            tag = "User";
+            tag_color = COLOR_CYAN;
+        }
+
+        int max_w = term_cols > 18 ? term_cols - 16 : 40;
+        int max_lines = (term_rows < 27) ? 2 : 4;
+        int len = (int)strlen(text);
         int start = 0;
-        int max_w = term_cols > 8 ? term_cols - 6 : 40;
-        int max_sub_lines = (term_rows < 27) ? 2 : 5;
-        int lines = 0;
-        while (start < len && lines < max_sub_lines) {
+        int line_idx = 0;
+
+        while (start < len && line_idx < max_lines) {
             int end = start + max_w;
             if (end >= len) {
                 end = len;
             } else {
                 int s = end;
-                while (s > start && current_subtitle[s] != ' ') s--;
+                while (s > start && text[s] != ' ') s--;
                 if (s > start) end = s;
             }
-            pos += sprintf(&frame_buffer[pos], "\033[2K  %s%.*s\033[0m\n", COLOR_WHITE_BOLD, end - start, &current_subtitle[start]);
-            lines++;
+
+            if (line_idx == 0) {
+                pos += sprintf(&frame_buffer[pos], "\033[2K  %s%s" COLOR_RESET " " COLOR_DIM "\xE2\x80\xBA" COLOR_RESET " " COLOR_WHITE_BOLD "%.*s" COLOR_RESET "\n",
+                               tag_color, tag, end - start, &text[start]);
+            } else {
+                pos += sprintf(&frame_buffer[pos], "\033[2K          " COLOR_WHITE_BOLD "%.*s" COLOR_RESET "\n",
+                               end - start, &text[start]);
+            }
+            line_idx++;
             start = end;
-            while (start < len && current_subtitle[start] == ' ') start++;
+            while (start < len && text[start] == ' ') start++;
         }
     } else {
         pos += sprintf(&frame_buffer[pos], "\033[2K\n");
     }
 
-    pos += sprintf(&frame_buffer[pos], "\033[2K  %s[Space/Enter to speak or type prompt | 'q'/Esc to exit]\033[0m\033[J", COLOR_DIM);
+    pos += sprintf(&frame_buffer[pos], "\033[2K  "
+                   COLOR_PILL_BG COLOR_WHITE_BOLD " Space " COLOR_RESET " " COLOR_DIM "Talk" COLOR_RESET "  "
+                   COLOR_PILL_BG COLOR_WHITE_BOLD " Enter " COLOR_RESET " " COLOR_DIM "Submit" COLOR_RESET "  "
+                   COLOR_PILL_BG COLOR_PURPLE " \"Hey Sphere\" " COLOR_RESET " " COLOR_DIM "Wake" COLOR_RESET "  "
+                   COLOR_PILL_BG COLOR_WHITE_BOLD " Esc " COLOR_RESET " " COLOR_DIM "Exit" COLOR_RESET "\033[J");
 
     unlock_renderer();
 

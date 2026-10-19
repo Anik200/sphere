@@ -1,115 +1,98 @@
-# SphereAI — Cross-Platform Native C Voice AI Agent & Braille Visualizer
+# SphereAI
 
-An ultra-optimized, cross-platform Voice AI Agent built entirely in native C (`brain.c`) and lightweight audio IPC. Runs on **Windows**, **Linux**, and **Android (Termux)**. Requires **zero external heavy neural models (no Qwen/Ollama)**, **zero GPU (0% GPU usage)**, and responds **instantly in milliseconds**.
+A fast, lightweight, native C voice assistant and 3D ANSI Braille visualizer. Runs on Windows, Linux, and Android (Termux) with zero GPU requirement and zero external heavy model dependencies.
 
----
+```text
+  ◆ SphereAI   ● STANDBY   │ › Ready. Say "Hey Sphere" to activate   MIC ▕███░░░░░░░▏ 30%
+  ────────────────────────────────────────────────────────────────────────────────────────
 
-## 🌟 Key Features & Capabilities
+                                     ⢀⢀⣀⣀⣀⡀⢀⡀
+                                ⢀⡀⣰⠢⡎⢴⠘⢜⡣⠡⢰⠪⡰⢓⣂⡦⢀
+                              ⣀⠖⠰⡁⠪⡀⠡⠄⠱⡀⠂⡌⠡⢐⠐⡁⢔⠂⡊⢱⢆⡀
+                            ⡀⠞⠠⠭⠈⠤⠠⠡⠐⠁⡀⠐⠄ ⠅⠐⡀⠐⠄⡐⠊⠨⣐⠼⠡⡀
+                           ⠄⡊⠐⢂⠐⠂⡂⠐⢂⡀⠊⡠⠄⠈⠰⠐⢀⠈⠔⠐⢀⠘⡀⠤⢈⠂⠃⡄
+                          ⠐⡅⡌⢈⠄⠈⠂⡈⢐⢀⠐⢄⠐⢀⠑⠄⠂⡈⠄⠰ ⠁⡀⠔⠐⠄⠂⣁⠢
+                           ⢣⠢⡈⡄⠉⢂⡀⠂⣀⠂⡀⠂⡂⠠⠈⢈⠐ ⠅⡈⠌⠐⠐ ⣁⣉⠴⠆
+                            ⢣⡨⠄⠕ ⠐⢄ ⠂⠠⠂ ⠄⠁⡀⢄⠈⡀⠠⠁⠂⠡⢁⡠⠬⠂
+                            ⠈⠝⣂⡃⠌⠂⠄ ⠆⠡⠈⢐⠐ ⡠⠐ ⢀⠂⠂⠅⢈⡠⠨⠗
+                             ⡝⠤⠑⡘⡂⢠⠁⢀⠆⠑ ⠠⠁⠠⡀⡉⠠⠐⠂⡌⣀⡠⠍⠃
 
-1. **Cross-Platform Native Engine**:
-   - Runs identically on **Windows (MinGW/MSVC)**, **Linux (Debian, Ubuntu, Fedora, Arch)**, and **Android Termux**.
-   - Auto-detects OS capabilities: POSIX pipes & pthreads on Linux/Termux, Win32 threads & Job Objects on Windows.
+  Sphere › Sphere AI online. Say "Hey Sphere" to activate.
 
-2. **Wake-Word & Keyboard Voice Activation**:
-   - **Voice**: The AI stays in low-power standby mode (gentle green Braille particle ball). Saying **"Hey Sphere"** or **"Sphere"** wakes it up (turns purple and begins listening).
-   - **Single-breath queries**: Say *"Hey Sphere what is the speed of light"* and it wakes up, searches, and answers directly.
-   - **Keyboard Trigger**: Press **Space** or **Enter** anytime to manually trigger voice listening mode (ideal for Termux/SSH or noisy environments).
-
-3. **Real-time Live Speech Transcription (Google-style)**:
-   - Your speech is recognized and displayed in real time on the screen word-by-word (`Listening: "what is the speed of light..."`).
-   - The purple particle sphere revolves dynamically according to your incoming voice volume.
-
-4. **Word-by-word Formatted Speech Streaming**:
-   - High-speed speech output via native engines:
-     - **Windows**: Windows SAPI Speech Synthesis (`System.Speech`).
-     - **Linux**: `espeak-ng` or `spd-say` (Speech Dispatcher).
-     - **Android Termux**: `termux-tts-speak` (Termux:API) with simulated cadence fallback.
-   - Words are printed **one-by-one in exact synchronization with speech audio**, neatly word-wrapped and formatted.
-
-5. **Instant Voice Barge-In / Interruption**:
-   - Saying **"Hey Sphere"** or **"stop"** while the AI is speaking immediately cuts off speech audio (<1ms) and resumes listening for your new request.
-
-6. **Native C AI Brain (`brain.c`)**:
-   - **Math Reasoning**: Evaluates arithmetic, percentages, powers, and roots with 100% mathematical precision in $<0.001\text{ ms}$.
-   - **Sensory Visual Descriptions**: 5-layer physical breakdown (form factor, materials, luster, lighting, and functional parts) fused with live web search definitions and Wikimedia Commons imagery.
-   - **Cognitive Reasoning**: Instant comparative analysis, engineering tradeoffs, and advice.
-
-7. **Braille Particle Visual Engine**:
-   - 60 FPS flicker-free Braille particle 3D sphere rendered purely in terminal ANSI.
-   - Morphs into a glowing golden smiling face when joyful or praised, then seamlessly reassembles into the sphere.
-
-8. **Voice-Controlled Exits**:
-   - Say **"exit"**, **"goodbye"**, **"quit"**, or press **Esc** / **'q'** to shut down.
-   - Sphere announces **"see you later, bye"** with synchronized subtitles before cleanly terminating child processes and restoring terminal settings.
-
-9. **Whole Song Music Playback & Dance Visualizer**:
-   - Say *"Hey Sphere play Bohemian Rhapsody"*, *"play Despacito"*, or *"play Shape of You"*.
-   - Streams the **full-length song** dynamically via `mpv`, `ffmpeg`, or `termux-media-player` while the 3D particle sphere pulses and dances to the music rhythm.
-   - Say *"stop"* or press Esc to pause or exit music.
+   Space  Talk   Enter  Submit   "Hey Sphere"  Wake   Esc  Exit
+```
 
 ---
 
-## 🚀 Quick Start Guide
+## Features
 
-### 📱 Android Termux
-1. Run the automated installer:
-   ```bash
-   bash install_termux.sh
-   ```
-   *Or install manually:*
-   ```bash
-   pkg update -y
-   pkg install -y clang make python python-pip git ffmpeg mpv termux-api
-   pip install --break-system-packages yt-dlp speechrecognition 2>/dev/null || pip install yt-dlp speechrecognition
-   make
-   ```
-2. Start Sphere AI:
-   ```bash
-   ./sphere_ai
-   ```
-   > **Termux Note**: For microphone and TTS support, install the free **Termux:API** companion app from F-Droid. You can also press **Space** or **Enter** to type or trigger voice prompts anytime.
+- **Native C Architecture**: Written in ANSI C (`main.c`, `renderer.c`, `audio.c`, `brain.c`, `search.c`, `agent.c`) with zero bloated frameworks.
+- **Modern TCSS / Terminal UI**: OpenCode-inspired status pills, dynamic Unicode block volume meters, actor dialogue tags, and responsive keybinding pills.
+- **3D Braille Particle Sphere**: Real-time 60 FPS 3D particle engine rendered via 2x4 Braille glyphs with smooth radial color blooms and audio-driven ripples.
+- **Wake-Word & Push-to-Talk**: Instant activation on "Hey Sphere" or by pressing Space/Enter. Supports seamless single-breath queries.
+- **Live Speech Transcription**: Word-by-word streaming STT and TTS speech output synchronized with onscreen dialogue subtitles.
+- **Instant Interruption**: Barge-in support (<1ms latency) cuts off playback when you speak or press Space.
+- **Full Track Music Playback**: Dynamically resolves and streams music tracks while the particle sphere visualizes rhythms.
+- **Cross-Platform**: Native compilation on Windows (MinGW/MSVC), Linux, and Android (Termux).
 
 ---
 
-### 🐧 Linux (Ubuntu, Debian, Fedora, Arch)
-1. Run the automated installer:
-   ```bash
-   chmod +x install_linux.sh
-   ./install_linux.sh
-   ```
-   *Or install manually on Debian/Ubuntu:*
-   ```bash
-   sudo apt update
-   sudo apt install -y build-essential python3 python3-pip curl mpv espeak-ng ffmpeg portaudio19-dev
-   pip3 install yt-dlp speechrecognition pyaudio
-   make
-   ```
-2. Start Sphere AI:
-   ```bash
-   ./sphere_ai
-   ```
+## Quick Start
+
+### Windows
+```bash
+mingw32-make
+.\sphere_ai.exe
+```
+
+### Linux
+```bash
+chmod +x install_linux.sh
+./install_linux.sh
+./sphere_ai
+```
+*Or manual build on Debian/Ubuntu:*
+```bash
+sudo apt update && sudo apt install -y build-essential python3 python3-pip curl mpv espeak-ng ffmpeg portaudio19-dev
+pip3 install yt-dlp speechrecognition pyaudio
+make
+./sphere_ai
+```
+
+### Android (Termux)
+```bash
+bash install_termux.sh
+./sphere_ai
+```
+*Requires Termux:API companion app from F-Droid for microphone and TTS access.*
 
 ---
 
-### 🪟 Windows
-1. Build using MinGW:
-   ```bash
-   mingw32-make
-   ```
-2. Run:
-   ```bash
-   .\sphere_ai.exe
-   ```
+## Controls
 
----
-
-## 🎮 Interaction & Controls
-
-| Action | Voice Command | Keyboard Shortcut |
+| Key / Trigger | Action | Description |
 |---|---|---|
-| **Activate / Listen** | *"Hey Sphere"* or *"Sphere"* | **Space** or **Enter** |
-| **Ask Anything** | *"Hey Sphere what is 125 times 8?"*, *"what does a galaxy look like?"* | Type query in terminal |
-| **Play Full Songs** | *"Hey Sphere play Bohemian Rhapsody"*, *"play jazz"* | Type `play [song]` |
-| **Interrupt / Stop** | Say *"Hey Sphere"* or *"stop"* | Press **Space** |
-| **Trigger Smile** | *"You did a great job"*, *"smile"*, *"happy"* | — |
-| **Exit Sphere** | *"exit"*, *"goodbye"*, *"quit"* | **Esc** or **'q'** |
+| **Space** / **Enter** | Voice / Input | Activates listening mode or submits typed prompt |
+| **"Hey Sphere"** | Wake Word | Activates listening mode via voice |
+| **Direct Typing** | Prompt Input | Type a prompt directly into the interactive buffer |
+| **"play \<track\>"** | Music Playback | Streams full song audio and visualizes frequency ripples |
+| **"stop"** / **Space** | Interrupt | Immediately stops current speech or music playback |
+| **Esc** / **'q'** | Exit | Cleanly terminates background processes and restores terminal |
+
+---
+
+## Technical Overview
+
+| Component | Implementation |
+|---|---|
+| **Rendering** | Braille subpixel rasterization (2x4 dots per cell) at 60 FPS |
+| **Audio IPC** | Platform-native audio backends (SAPI, espeak-ng, Termux:API) |
+| **Reasoning Engine** | Native C mathematical parsing and deterministic inference (<1ms) |
+| **Knowledge Retrieval** | Lightweight HTTP search queries and candidate scraping |
+| **Streaming Media** | Low-latency audio stream extraction and playback |
+
+---
+
+## License
+
+MIT

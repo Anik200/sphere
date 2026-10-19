@@ -147,9 +147,10 @@ static void handle_exit(void) {
 #endif
 
     audio_stop_music();
+    renderer_set_input_buffer("");
     renderer_set_state(STATE_SPEAKING);
     renderer_set_status("Exiting SphereAI...");
-    renderer_set_subtitle("Sphere: see you later, bye");
+    renderer_set_subtitle("see you later, bye");
     audio_speak_exit("see you later, bye");
     int wait_count = 80;
     while (audio_is_speaking() && --wait_count > 0) {
@@ -228,6 +229,7 @@ static int is_stop_command(const char *lower) {
 }
 
 static void handle_user_query(const char *raw_query) {
+    renderer_set_input_buffer("");
     if (!raw_query || strlen(raw_query) == 0) return;
     const unsigned char *u = (const unsigned char *)raw_query;
     if (u[0] == 0xEF && u[1] == 0xBB && u[2] == 0xBF) {
@@ -565,6 +567,7 @@ int main(void) {
                 if (c == ' ' || c == 10 || c == 13) {
                     typed_len = 0;
                     typed_buf[0] = '\0';
+                    renderer_set_input_buffer("");
                     renderer_set_state(STATE_LISTENING);
                     renderer_set_status("Awake! Listening... (Speak or type prompt)");
                     renderer_set_subtitle("Listening... (Type prompt and press Enter)");
@@ -573,11 +576,10 @@ int main(void) {
                     typed_len = 0;
                     typed_buf[typed_len++] = (char)c;
                     typed_buf[typed_len] = '\0';
+                    renderer_set_input_buffer(typed_buf);
                     renderer_set_state(STATE_LISTENING);
                     renderer_set_status("Typing prompt... (Press Enter to submit)");
-                    char disp[512];
-                    snprintf(disp, sizeof(disp), "> %s_", typed_buf);
-                    renderer_set_subtitle(disp);
+                    renderer_set_subtitle("");
                     audio_set_listening_mode();
                 }
             }
@@ -586,6 +588,7 @@ int main(void) {
                 if (renderer_get_state() != STATE_LISTENING) {
                     typed_len = 0;
                     typed_buf[0] = '\0';
+                    renderer_set_input_buffer("");
                     renderer_set_state(STATE_LISTENING);
                     renderer_set_status("Awake! Listening... (Speak or type prompt)");
                     renderer_set_subtitle("Listening... (Type prompt and press Enter)");
@@ -604,9 +607,11 @@ int main(void) {
                             if (typed_len > 0) {
                                 typed_len = 0;
                                 typed_buf[0] = '\0';
+                                renderer_set_input_buffer("");
                                 renderer_set_status("Awake! Listening... (Speak or type prompt)");
                                 renderer_set_subtitle("Listening... (Type prompt and press Enter)");
                             } else {
+                                renderer_set_input_buffer("");
                                 renderer_set_state(STATE_IDLE);
                                 audio_set_standby_mode();
                                 renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
@@ -619,9 +624,11 @@ int main(void) {
                                 snprintf(submitted, sizeof(submitted), "%s", typed_buf);
                                 typed_len = 0;
                                 typed_buf[0] = '\0';
+                                renderer_set_input_buffer("");
                                 handle_user_query(submitted);
                                 break;
                             } else {
+                                renderer_set_input_buffer("");
                                 renderer_set_state(STATE_IDLE);
                                 audio_set_standby_mode();
                                 renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
@@ -631,10 +638,9 @@ int main(void) {
                         } else if (c == 8 || c == 127) {
                             if (typed_len > 0) {
                                 typed_buf[--typed_len] = '\0';
+                                renderer_set_input_buffer(typed_buf);
                                 if (typed_len > 0) {
-                                    char disp[512];
-                                    snprintf(disp, sizeof(disp), "> %s_", typed_buf);
-                                    renderer_set_subtitle(disp);
+                                    renderer_set_subtitle("");
                                     renderer_set_status("Typing prompt... (Press Enter to submit)");
                                 } else {
                                     renderer_set_status("Awake! Listening... (Speak or type prompt)");
@@ -645,9 +651,8 @@ int main(void) {
                             if (typed_len + 1 < (int)sizeof(typed_buf)) {
                                 typed_buf[typed_len++] = (char)c;
                                 typed_buf[typed_len] = '\0';
-                                char disp[512];
-                                snprintf(disp, sizeof(disp), "> %s_", typed_buf);
-                                renderer_set_subtitle(disp);
+                                renderer_set_input_buffer(typed_buf);
+                                renderer_set_subtitle("");
                                 renderer_set_status("Typing prompt... (Press Enter to submit)");
                             }
                         }
