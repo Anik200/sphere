@@ -19,7 +19,7 @@
 
 static Particle particles[NUM_PARTICLES];
 static unsigned char braille_grid[TERM_H][TERM_W];
-static char frame_buffer[TERM_H * (TERM_W * 4 + 4) + 16384];
+static char frame_buffer[65536];
 
 static const unsigned char pixel_map[4][2] = {
     {0x01, 0x08},
@@ -38,6 +38,12 @@ static volatile int expression_countdown = 0;
 static volatile float music_phase = 0.0f;
 static volatile float ripple_phase = 0.0f;
 static char custom_color[32] = "";
+
+// Radial color bloom transition state
+static char prev_color[32] = COLOR_GREEN;
+static char active_target_color[32] = COLOR_GREEN;
+static float bloom_progress = 1.0f; // 1.0 = bloom finished (whole ball is target color)
+static float bloom_speed = 0.05f;
 
 static char current_status[128] = "Ready. Press Space to talk or type a prompt.";
 static char current_subtitle[4096] = "";
@@ -296,6 +302,15 @@ void renderer_init(void) {
         }
         fclose(f_col);
     }
+
+    if (custom_color[0] != '\0') {
+        snprintf(prev_color, sizeof(prev_color), "%s", custom_color);
+        snprintf(active_target_color, sizeof(active_target_color), "%s", custom_color);
+    } else {
+        snprintf(prev_color, sizeof(prev_color), "%s", COLOR_GREEN);
+        snprintf(active_target_color, sizeof(active_target_color), "%s", COLOR_GREEN);
+    }
+    bloom_progress = 1.0f;
 }
 
 void renderer_set_state(AgentState state) {
@@ -425,25 +440,24 @@ void renderer_render_frame(void) {
         float speak_pulse = 0.25f + 0.20f * sinf(current_angle * 3.2f) * cosf(current_angle * 1.6f);
         if (sound_energy < speak_pulse) sound_energy = speak_pulse;
     } else if (state == STATE_MUSIC) {
-        music_phase += 0.05f;
-        float beat = 0.18f + 0.10f * sinf(music_phase * 2.5f);
+        music_phase += 0.075f;
+        float beat = 0.32f + 0.22f * sinf(music_phase * 2.8f);
         if (sound_energy < beat) sound_energy = beat;
     }
 
     // Dynamic rotation angle:
-    // The ball ONLY spins when NOT speaking and NOT listening!
-    float rotation_speed = 0.035f; // Normal idle rotation
-    if (state == STATE_SPEAKING || state == STATE_LISTENING || state == STATE_MUSIC) {
-        rotation_speed = 0.0f; // Stays completely still, zero spin!
-    } else if (state == STATE_THINKING) {
-        rotation_speed = 0.09f; // Thinking animation
+    // Continuous smooth 3D rotation across all states just like before!
+    // Accelerates dynamically with sound energy, speech cadence, and thinking
+    float rotation_speed = 0.035f; // Baseline smooth spin
+    if (state == STATE_THINKING) {
+        rotation_speed = 0.09f; // Faster dynamic revolving when thinking
+    } else if (sound_energy > 0.03f) {
+        rotation_speed += sound_energy * 0.22f; // Energetic swirl with voice & music!
     }
     current_angle += rotation_speed;
 
-    // Advance independent ripple phase so fluid surface ripples animate even when ball stays still
-    if (state == STATE_SPEAKING || state == STATE_LISTENING || sound_energy > 0.02f) {
-        ripple_phase += 0.14f;
-    }
+    // Advance independent ripple phase for surface fluidity
+    ripple_phase += 0.16f;
 
     float angle = current_angle;
     float morph = current_morph;
@@ -484,7 +498,7 @@ void renderer_render_frame(void) {
     // Dynamic base scale: expands and breathes with vocal amplitude or music
     float base_scale = (pix_h * 0.36f);
     if (state == STATE_MUSIC) {
-        base_scale *= (1.0f + sound_energy * 0.05f); // Gentle 5% breathing during music
+        base_scale *= (1.0f + sound_energy * 0.14f); // Pronounced rhythmic bass breathing
     } else if (sound_energy > 0.03f) {
         base_scale *= (1.0f + sound_energy * 0.16f); // 16% breathing expansion
     } else if (state == STATE_THINKING) {
@@ -508,12 +522,17 @@ void renderer_render_frame(void) {
 
         // Dynamic fluid ripples and harmonic surface distortions
         if (state == STATE_MUSIC) {
-            float wave_lat = sinf(particles[i].sy * 4.0f + music_phase * 2.0f) * (sound_energy * 0.04f);
+            // Enhanced, dynamic, prominent liquid music ripples dancing with the song beats
+            float wave_lat = sinf(particles[i].sy * 6.0f + music_phase * 3.2f) * (sound_energy * 0.26f);
             float theta = atan2f(particles[i].sz, particles[i].sx);
-            float wave_lon = cosf(theta * 2.0f + music_phase * 1.5f) * (sound_energy * 0.02f);
-            float ripple = 1.0f + wave_lat + wave_lon;
+            float wave_lon = cosf(theta * 3.0f - music_phase * 2.4f) * (sound_energy * 0.22f);
+            float radial_dist = particles[i].sx * particles[i].sx + particles[i].sz * particles[i].sz;
+            float wave_shock = sinf(radial_dist * 8.0f - music_phase * 3.5f) * (sound_energy * 0.18f);
+            float repel_band = sinf(particles[i].sy * 4.0f + music_phase * 2.0f) * (sound_energy * 0.15f);
+
+            float ripple = 1.0f + wave_lat + wave_lon + wave_shock + repel_band;
             rx *= ripple;
-            ry *= (1.0f + wave_lat * 0.5f);
+            ry *= (1.0f + wave_lat * 0.75f + sound_energy * 0.14f + repel_band);
             rz *= ripple;
         } else if (sound_energy > 0.02f) {
             float wave_lat = sinf(particles[i].sy * 7.0f - ripple_phase * 2.2f) * (sound_energy * 0.18f);
@@ -543,33 +562,54 @@ void renderer_render_frame(void) {
     }
 
     // Determine state color
-    const char *state_color;
+    const char *target_color;
     if (morph > 0.35f) {
         switch (current_expression) {
-            case EXPR_HAPPY:     state_color = COLOR_GOLD; break;
-            case EXPR_SAD:       state_color = COLOR_BLUE; break;
-            case EXPR_SURPRISED: state_color = COLOR_CYAN; break;
-            case EXPR_ANGRY:     state_color = COLOR_RED; break;
-            case EXPR_WINK:      state_color = COLOR_YELLOW; break;
-            case EXPR_COOL:      state_color = COLOR_PURPLE_BRIGHT; break;
-            default:             state_color = COLOR_GOLD; break;
+            case EXPR_HAPPY:     target_color = COLOR_GOLD; break;
+            case EXPR_SAD:       target_color = COLOR_BLUE; break;
+            case EXPR_SURPRISED: target_color = COLOR_CYAN; break;
+            case EXPR_ANGRY:     target_color = COLOR_RED; break;
+            case EXPR_WINK:      target_color = COLOR_YELLOW; break;
+            case EXPR_COOL:      target_color = COLOR_PURPLE_BRIGHT; break;
+            default:             target_color = COLOR_GOLD; break;
         }
     } else {
         switch (state) {
             case STATE_LISTENING:
-                state_color = COLOR_PURPLE;
+                target_color = COLOR_PURPLE;
                 break;
             case STATE_THINKING:
-                state_color = COLOR_CYAN;
+                target_color = COLOR_CYAN;
                 break;
             case STATE_MUSIC:
-                state_color = (custom_color[0] != '\0') ? custom_color : COLOR_CYAN;
+                target_color = (custom_color[0] != '\0') ? custom_color : COLOR_CYAN;
                 break;
             case STATE_SPEAKING:
             case STATE_IDLE:
             default:
-                state_color = (custom_color[0] != '\0') ? custom_color : COLOR_GREEN;
+                target_color = (custom_color[0] != '\0') ? custom_color : COLOR_GREEN;
                 break;
+        }
+    }
+
+    // Detect color changes and trigger radial bloom transition radiating from center of the ball
+    if (strcmp(target_color, active_target_color) != 0) {
+        snprintf(prev_color, sizeof(prev_color), "%s", active_target_color);
+        snprintf(active_target_color, sizeof(active_target_color), "%s", target_color);
+        bloom_progress = 0.0f;
+
+        // "when listening the transition happens quick"
+        if (state == STATE_LISTENING) {
+            bloom_speed = 0.10f; // Fast, snappy bloom (~10 frames = ~160ms)
+        } else {
+            bloom_speed = 0.045f; // Smooth, radiant bloom (~22 frames = ~360ms)
+        }
+    }
+
+    if (bloom_progress < 1.0f) {
+        bloom_progress += bloom_speed;
+        if (bloom_progress >= 1.0f) {
+            bloom_progress = 1.0f;
         }
     }
 
@@ -584,10 +624,17 @@ void renderer_render_frame(void) {
 
     // Write entire frame to single buffer starting with cursor home
     int pos = sprintf(frame_buffer, "\033[H\033[2K  %sSphereAI%s | %s%s\033[0m | Sound: [%s%s%s]\n",
-                      COLOR_WHITE_BOLD, COLOR_RESET, state_color, current_status,
-                      state_color, sound_meter, COLOR_RESET);
+                      COLOR_WHITE_BOLD, COLOR_RESET, active_target_color, current_status,
+                      active_target_color, sound_meter, COLOR_RESET);
 
-    pos += sprintf(&frame_buffer[pos], "%s", state_color);
+    // Maximum visual radius for bloom calculation (from center to sphere edge)
+    float center_x = draw_w / 2.0f;
+    float center_y = draw_h / 2.0f;
+    float max_radius = (draw_h / 2.0f) * 1.55f;
+    float current_bloom_radius = bloom_progress * max_radius;
+    float wave_edge = 1.8f; // Glowing wavefront crest
+
+    const char *current_pen = NULL;
 
     for (int y = 0; y < draw_h; y++) {
         pos += sprintf(&frame_buffer[pos], "\033[2K  ");
@@ -596,6 +643,29 @@ void renderer_render_frame(void) {
             if (mask == 0) {
                 frame_buffer[pos++] = ' ';
             } else {
+                const char *cell_color = active_target_color;
+
+                if (bloom_progress < 1.0f) {
+                    float dx = ((float)x + 0.5f - center_x);
+                    float dy = ((float)y + 0.5f - center_y) * 2.0f;
+                    float dist = sqrtf(dx * dx + dy * dy);
+
+                    if (dist <= current_bloom_radius) {
+                        if (dist >= current_bloom_radius - wave_edge && bloom_progress < 0.95f) {
+                            cell_color = COLOR_WHITE_BOLD; // Glowing leading crest of bloom
+                        } else {
+                            cell_color = active_target_color; // Newly bloomed color
+                        }
+                    } else {
+                        cell_color = prev_color; // Color before bloom
+                    }
+                }
+
+                if (cell_color != current_pen) {
+                    pos += sprintf(&frame_buffer[pos], "%s", cell_color);
+                    current_pen = cell_color;
+                }
+
                 frame_buffer[pos++] = (char)0xE2;
                 frame_buffer[pos++] = (char)(0xA0 | (mask >> 6));
                 frame_buffer[pos++] = (char)(0x80 | (mask & 0x3F));
