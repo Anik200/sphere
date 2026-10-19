@@ -39,10 +39,9 @@ static volatile float music_phase = 0.0f;
 static volatile float ripple_phase = 0.0f;
 static char custom_color[32] = "";
 
-// Radial color bloom transition state
 static char prev_color[32] = COLOR_GREEN;
 static char active_target_color[32] = COLOR_GREEN;
-static float bloom_progress = 1.0f; // 1.0 = bloom finished (whole ball is target color)
+static float bloom_progress = 1.0f;
 static float bloom_speed = 0.05f;
 
 static char current_status[128] = "Ready. Press Space to talk or type a prompt.";
@@ -262,7 +261,7 @@ static void setup_expression_targets(BallExpression expr) {
 void renderer_init(void) {
 #ifdef _WIN32
     InitializeCriticalSection(&render_lock);
-    SetConsoleOutputCP(65001); // UTF-8
+    SetConsoleOutputCP(65001);
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD dwMode = 0;
     GetConsoleMode(hOut, &dwMode);
@@ -270,11 +269,9 @@ void renderer_init(void) {
     SetConsoleMode(hOut, dwMode);
 #endif
 
-    // Enter alternate screen buffer, hide cursor, clear screen, and home cursor
     printf("\033[?1049h\033[?25l\033[2J\033[H");
     fflush(stdout);
 
-    // Initialize Fibonacci Sphere base coordinates and default Happy Face target coordinates
     float golden_angle = (float)M_PI * (3.0f - sqrtf(5.0f));
     for (int i = 0; i < NUM_PARTICLES; i++) {
         float y = 1.0f - (i / (float)(NUM_PARTICLES - 1)) * 2.0f;
@@ -286,7 +283,6 @@ void renderer_init(void) {
     }
     setup_expression_targets(EXPR_HAPPY);
 
-    // Restore saved custom color if exists
     FILE *f_col = fopen("sphere_color.cfg", "r");
     if (f_col) {
         char buf[64];
@@ -321,7 +317,7 @@ void renderer_set_state(AgentState state) {
         }
         setup_expression_targets(EXPR_HAPPY);
         current_expression = EXPR_HAPPY;
-        expression_countdown = 180; // ~3 seconds at 60 FPS
+        expression_countdown = 180;
     }
     current_state = state;
     unlock_renderer();
@@ -336,7 +332,7 @@ void renderer_set_expression(BallExpression expr) {
     current_expression = expr;
     if (expr != EXPR_NONE) {
         setup_expression_targets(expr);
-        expression_countdown = 240; // ~4 seconds morph
+        expression_countdown = 240;
     } else {
         expression_countdown = 0;
     }
@@ -420,7 +416,6 @@ void renderer_render_frame(void) {
     AgentState state = current_state;
     float voice_amp = current_voice_amp;
 
-    // Morph interpolation
     if (current_expression != EXPR_NONE || state == STATE_HAPPY) {
         current_morph += (1.0f - current_morph) * 0.12f;
         if (expression_countdown > 0) {
@@ -434,7 +429,6 @@ void renderer_render_frame(void) {
         current_morph += (0.0f - current_morph) * 0.12f;
     }
 
-    // Dynamic sound energy from voice input, speech synthesis or music
     float sound_energy = voice_amp;
     if (state == STATE_SPEAKING) {
         float speak_pulse = 0.25f + 0.20f * sinf(current_angle * 3.2f) * cosf(current_angle * 1.6f);
@@ -445,18 +439,14 @@ void renderer_render_frame(void) {
         if (sound_energy < beat) sound_energy = beat;
     }
 
-    // Dynamic rotation angle:
-    // Continuous smooth 3D rotation across all states just like before!
-    // Accelerates dynamically with sound energy, speech cadence, and thinking
-    float rotation_speed = 0.035f; // Baseline smooth spin
+    float rotation_speed = 0.035f;
     if (state == STATE_THINKING) {
-        rotation_speed = 0.09f; // Faster dynamic revolving when thinking
+        rotation_speed = 0.09f;
     } else if (sound_energy > 0.03f) {
-        rotation_speed += sound_energy * 0.22f; // Energetic swirl with voice & music!
+        rotation_speed += sound_energy * 0.22f;
     }
     current_angle += rotation_speed;
 
-    // Advance independent ripple phase for surface fluidity
     ripple_phase += 0.16f;
 
     float angle = current_angle;
@@ -479,7 +469,6 @@ void renderer_render_frame(void) {
     }
 #endif
 
-    // Dynamically scale drawing height to strictly fit within the terminal without scrolling
     int draw_h = TERM_H;
     if (term_rows < 27) {
         draw_h = term_rows - 8;
@@ -495,34 +484,29 @@ void renderer_render_frame(void) {
     int pix_w = draw_w * 2;
     int pix_h = draw_h * 4;
 
-    // Dynamic base scale: expands and breathes with vocal amplitude or music
     float base_scale = (pix_h * 0.36f);
     if (state == STATE_MUSIC) {
-        base_scale *= (1.0f + sound_energy * 0.14f); // Pronounced rhythmic bass breathing
+        base_scale *= (1.0f + sound_energy * 0.14f);
     } else if (sound_energy > 0.03f) {
-        base_scale *= (1.0f + sound_energy * 0.16f); // 16% breathing expansion
+        base_scale *= (1.0f + sound_energy * 0.16f);
     } else if (state == STATE_THINKING) {
         base_scale *= (1.0f + 0.10f * sinf(angle * 3.0f));
     }
 
     memset(braille_grid, 0, sizeof(braille_grid));
 
-    // Particle transformation and projection
     float cos_a = cosf(angle);
     float sin_a = sinf(angle);
     float cos_pitch = cosf(angle * 0.35f);
     float sin_pitch = sinf(angle * 0.35f);
 
     for (int i = 0; i < NUM_PARTICLES; i++) {
-        // 3D rotation around Y and X axis
         float rx = particles[i].sx * cos_a - particles[i].sz * sin_a;
         float rz = particles[i].sx * sin_a + particles[i].sz * cos_a;
         float ry = particles[i].sy * cos_pitch - rz * sin_pitch;
         rz       = particles[i].sy * sin_pitch + rz * cos_pitch;
 
-        // Dynamic fluid ripples and harmonic surface distortions
         if (state == STATE_MUSIC) {
-            // Enhanced, dynamic, prominent liquid music ripples dancing with the song beats
             float wave_lat = sinf(particles[i].sy * 6.0f + music_phase * 3.2f) * (sound_energy * 0.26f);
             float theta = atan2f(particles[i].sz, particles[i].sx);
             float wave_lon = cosf(theta * 3.0f - music_phase * 2.4f) * (sound_energy * 0.22f);
@@ -549,19 +533,16 @@ void renderer_render_frame(void) {
             rz *= ripple_repel;
         }
 
-        // Interpolate between 3D sphere and target expression
         float fx = (1.0f - morph) * rx + morph * particles[i].tx;
         float fy = (1.0f - morph) * ry + morph * particles[i].ty;
         float fz = (1.0f - morph) * rz + morph * particles[i].tz;
 
-        // Perspective projection
         float fov = 2.6f / (2.6f - fz * 0.55f);
         int px = (int)(pix_w / 2.0f + fx * base_scale * fov);
         int py = (int)(pix_h / 2.0f + fy * base_scale * fov);
         set_subpixel(px, py, pix_w, pix_h);
     }
 
-    // Determine state color
     const char *target_color;
     if (morph > 0.35f) {
         switch (current_expression) {
@@ -592,17 +573,15 @@ void renderer_render_frame(void) {
         }
     }
 
-    // Detect color changes and trigger radial bloom transition radiating from center of the ball
     if (strcmp(target_color, active_target_color) != 0) {
         snprintf(prev_color, sizeof(prev_color), "%s", active_target_color);
         snprintf(active_target_color, sizeof(active_target_color), "%s", target_color);
         bloom_progress = 0.0f;
 
-        // "when listening the transition happens quick"
         if (state == STATE_LISTENING) {
-            bloom_speed = 0.10f; // Fast, snappy bloom (~10 frames = ~160ms)
+            bloom_speed = 0.10f;
         } else {
-            bloom_speed = 0.045f; // Smooth, radiant bloom (~22 frames = ~360ms)
+            bloom_speed = 0.045f;
         }
     }
 
@@ -613,7 +592,6 @@ void renderer_render_frame(void) {
         }
     }
 
-    // Live Audio Visualizer Meter
     char sound_meter[32] = {0};
     int meter_bars = (int)(sound_energy * 10.0f);
     if (meter_bars > 10) meter_bars = 10;
@@ -622,17 +600,15 @@ void renderer_render_frame(void) {
     for (; b < 10; b++) sound_meter[b] = '-';
     sound_meter[10] = '\0';
 
-    // Write entire frame to single buffer starting with cursor home
     int pos = sprintf(frame_buffer, "\033[H\033[2K  %sSphereAI%s | %s%s\033[0m | Sound: [%s%s%s]\n",
                       COLOR_WHITE_BOLD, COLOR_RESET, active_target_color, current_status,
                       active_target_color, sound_meter, COLOR_RESET);
 
-    // Maximum visual radius for bloom calculation (from center to sphere edge)
     float center_x = draw_w / 2.0f;
     float center_y = draw_h / 2.0f;
     float max_radius = (draw_h / 2.0f) * 1.55f;
     float current_bloom_radius = bloom_progress * max_radius;
-    float wave_edge = 1.8f; // Glowing wavefront crest
+    float wave_edge = 1.8f;
 
     const char *current_pen = NULL;
 
@@ -652,12 +628,12 @@ void renderer_render_frame(void) {
 
                     if (dist <= current_bloom_radius) {
                         if (dist >= current_bloom_radius - wave_edge && bloom_progress < 0.95f) {
-                            cell_color = COLOR_WHITE_BOLD; // Glowing leading crest of bloom
+                            cell_color = COLOR_WHITE_BOLD;
                         } else {
-                            cell_color = active_target_color; // Newly bloomed color
+                            cell_color = active_target_color;
                         }
                     } else {
-                        cell_color = prev_color; // Color before bloom
+                        cell_color = prev_color;
                     }
                 }
 
@@ -674,7 +650,6 @@ void renderer_render_frame(void) {
         frame_buffer[pos++] = '\n';
     }
 
-    // Subtitle section below sphere
     pos += sprintf(&frame_buffer[pos], "%s\033[2K\n", COLOR_RESET);
 
     if (current_subtitle[0] != '\0') {
@@ -710,7 +685,6 @@ void renderer_render_frame(void) {
 }
 
 void renderer_cleanup(void) {
-    // Restore main screen buffer, show cursor, and reset colors
     printf("\033[?1049l\033[?25h\033[0m\n");
     fflush(stdout);
 #ifdef _WIN32

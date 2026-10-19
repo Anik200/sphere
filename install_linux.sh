@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# Sphere AI - Linux Automated Installer & Setup Script
-# Supports: Ubuntu, Debian, Mint, Fedora, Arch Linux, Manjaro, openSUSE, etc.
-# ==============================================================================
 
 set -e
 
@@ -12,7 +8,6 @@ echo "              Sphere AI - Linux Setup                     "
 echo "=========================================================="
 echo ""
 
-# Detect package manager
 SUDO=""
 if [ "$(id -u)" -ne 0 ]; then
     if command -v sudo >/dev/null 2>&1; then
@@ -46,7 +41,6 @@ else
     echo "[WARNING] Unknown package manager. Please ensure gcc, make, python3, curl, mpv, and espeak-ng are installed."
 fi
 
-# 2. Install Python dependencies
 echo "[2/4] Installing Python packages (yt-dlp, speechrecognition, pyaudio)..."
 PIP_CMD="pip3"
 if ! command -v pip3 >/dev/null 2>&1; then
@@ -59,12 +53,10 @@ $PIP_CMD install yt-dlp speechrecognition pyaudio 2>/dev/null || \
 $PIP_CMD install --break-system-packages yt-dlp speechrecognition 2>/dev/null || \
 $PIP_CMD install yt-dlp speechrecognition 2>/dev/null || true
 
-# 3. Build native C binary
 echo "[3/4] Compiling native Sphere AI binary..."
 make clean
 make
 
-# 4. Set executable permissions
 echo "[4/4] Setting execution permissions..."
 chmod +x sphere_ai sphere_voice_service.py music_search.py
 

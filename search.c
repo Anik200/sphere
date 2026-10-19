@@ -19,7 +19,6 @@
 #define PCLOSE_FUNC pclose
 #endif
 
-// Safe URL encoder
 static void url_encode(const char *src, char *dst, size_t dst_len) {
     static const char *hex = "0123456789ABCDEF";
     size_t d = 0;
@@ -38,13 +37,11 @@ static void url_encode(const char *src, char *dst, size_t dst_len) {
     dst[d] = '\0';
 }
 
-// Simple JSON string value extractor
 static int extract_json_field(const char *json, const char *key, char *out_val, size_t max_len) {
     char pattern[128];
     snprintf(pattern, sizeof(pattern), "\"%s\":\"", key);
     const char *pos = strstr(json, pattern);
     if (!pos) {
-        // Try without opening quote for nested objects or numbers
         snprintf(pattern, sizeof(pattern), "\"%s\": \"", key);
         pos = strstr(json, pattern);
     }
@@ -93,7 +90,6 @@ static int extract_opensearch_title(const char *json, char *out_title, size_t ma
     if (!json || !out_title || max_len == 0) return 0;
     out_title[0] = '\0';
 
-    // OpenSearch format: ["query", ["Title 1", "Title 2"], ...]
     const char *p = strchr(json, '[');
     if (!p) return 0;
     p++;
@@ -102,7 +98,7 @@ static int extract_opensearch_title(const char *json, char *out_title, size_t ma
     p++;
 
     while (*p && isspace((unsigned char)*p)) p++;
-    if (*p == ']') return 0; // Empty result array
+    if (*p == ']') return 0;
 
     if (*p == '"') {
         p++;
@@ -127,7 +123,6 @@ static void clean_image_caption(const char *url, char *caption, size_t max_len) 
     if (!last_slash) last_slash = url;
     else last_slash++;
 
-    // Skip leading dimension prefixes like "60px-", "330px-", etc.
     const char *p = last_slash;
     while (isdigit((unsigned char)*p)) p++;
     if (strncmp(p, "px-", 3) == 0) {
@@ -142,7 +137,7 @@ static void clean_image_caption(const char *url, char *caption, size_t max_len) 
             caption[o++] = ' ';
             i += 2;
         } else if (last_slash[i] == '.') {
-            break; // Stop at extension (.jpg, .png)
+            break;
         } else {
             caption[o++] = last_slash[i];
         }
@@ -154,12 +149,11 @@ static void extract_subject(const char *raw, char *clean, size_t max_len) {
     if (!raw || !clean || max_len == 0) return;
     clean[0] = '\0';
 
-    // 1. Skip UTF-8 BOM if present
     const unsigned char *src = (const unsigned char *)raw;
     if (src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF) {
         src += 3;
     }
-    // 2. Skip leading whitespace and quotes
+
     while (*src && (isspace(*src) || *src == '"' || *src == '\'' || *src == '`')) {
         src++;
     }
@@ -265,9 +259,6 @@ static void extract_subject(const char *raw, char *clean, size_t max_len) {
     }
 }
 
-// ---------------------------------------------------------
-// Comprehensive Native Offline Knowledge Base (0% Internet)
-// ---------------------------------------------------------
 typedef struct {
     const char *keywords;
     const char *title;
@@ -275,7 +266,6 @@ typedef struct {
 } OfflineArticle;
 
 static const OfflineArticle OFFLINE_KB[] = {
-    // 1. Computer Hardware, Peripherals & Electronics
     {
         "computer mouse,pc mouse,optical mouse,trackball,gaming mouse,usb mouse",
         "Computer mouse",
@@ -399,7 +389,6 @@ static const OfflineArticle OFFLINE_KB[] = {
         "Choosing between a cheque and a flat shirt depends on formality and visual balance: flat shirts offer clean, versatile minimalism suited for business suits, job interviews, and formal dinners; cheque shirts bring visual interest, personality, and smart-casual charisma."
     },
 
-    // 2. Animals & Biology
     {
         "cat,kitten,feline,domestic cat",
         "Cat",
@@ -473,7 +462,6 @@ static const OfflineArticle OFFLINE_KB[] = {
         "and the ability to engineer complex technologies and global societies."
     },
 
-    // 3. Nature, Cosmos & Earth
     {
         "sunflower,helianthus",
         "Sunflower",
@@ -535,7 +523,6 @@ static const OfflineArticle OFFLINE_KB[] = {
         "formed over millions of years by tectonic collisions and volcanic activity."
     },
 
-    // 4. Vehicles & Landmarks
     {
         "car,automobile,vehicle,motorcar",
         "Car",
@@ -609,7 +596,7 @@ static const OfflineArticle OFFLINE_KB[] = {
         "Physics is the natural science of matter, its fundamental constituents, its motion and behavior through space and time, and the related entities of energy and force. "
         "Physics is one of the most fundamental scientific disciplines, with its main goal being to understand how the universe behaves."
     },
-    // 5. Scientific, Biological & Natural Phenomena
+
     {
         "why spiders hang upside down,why do spiders hang upside down,spiders hang upside down,spider hang upside down,hanging upside down,spider upside down,spiders hanging upside down,spider,spiders,arachnid,spider web",
         "Why spiders hang upside down",
@@ -745,7 +732,6 @@ static int search_offline_knowledge(const char *subject, SearchResult *out_resul
     int best_match_idx = -1;
     size_t best_match_len = 0;
 
-    // Pass 1: Exact match with any keyword alias
     for (int a = 0; a < num_articles; a++) {
         const char *kw = OFFLINE_KB[a].keywords;
         while (*kw) {
@@ -762,7 +748,6 @@ static int search_offline_knowledge(const char *subject, SearchResult *out_resul
         }
     }
 
-    // Pass 2: Substring matching (prefer longer, more specific matches)
     for (int a = 0; a < num_articles; a++) {
         const char *kw = OFFLINE_KB[a].keywords;
         while (*kw) {
@@ -851,7 +836,6 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
         subject[sizeof(subject) - 1] = '\0';
     }
 
-    // Step 0: Check verified offline knowledge base first (0ms instant response)
     if (search_offline_knowledge(subject, out_result) || search_offline_knowledge(query, out_result)) {
         return 1;
     }
@@ -862,7 +846,6 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
     char canonical_title[256] = {0};
     int got_title = 0;
 
-    // Step 1: OpenSearch for exact canonical encyclopedia title with identified User-Agent
     char open_cmd[2048];
     snprintf(open_cmd, sizeof(open_cmd),
         "%s -s -L -A \"SphereAI/2.0 (desktop-client; contact@sphere.internal)\" --connect-timeout 2 --max-time 4 "
@@ -885,7 +868,6 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
         PCLOSE_FUNC(pipe);
     }
 
-    // Step 1b: If OpenSearch didn't find title, search via Wikipedia list=search
     if (!got_title) {
         char list_cmd[2048];
         snprintf(list_cmd, sizeof(list_cmd),
@@ -911,7 +893,6 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
         }
     }
 
-    // Step 2: Fetch exact extract and thumbnail for canonical title
     char fetch_cmd[2048];
     if (got_title) {
         char enc_title[512];
@@ -935,7 +916,6 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
             response[bytes_read] = '\0';
 
             if (extract_json_field(response, "title", out_result->title, sizeof(out_result->title))) {
-                // If title was from fuzzy generator search, strictly verify relevance against the query
                 if (!got_title && !is_title_relevant(subject, out_result->title)) {
                     free(response);
                     PCLOSE_FUNC(pipe);
@@ -965,7 +945,6 @@ int search_web_and_images(const char *query, SearchResult *out_result) {
         PCLOSE_FUNC(pipe);
     }
 
-    // Step 3: Seamless offline fallback if online query didn't return a match
     return search_offline_knowledge(subject, out_result);
 }
 
@@ -973,7 +952,6 @@ int search_music_track(const char *query, MusicTrack *out_track) {
     if (!query || !out_track) return 0;
     memset(out_track, 0, sizeof(MusicTrack));
 
-    // Strip conversational prefixes and wake words
     const char *start = query;
     while (*start && (isspace((unsigned char)*start) || *start == '"' || *start == '\'')) start++;
 
@@ -981,7 +959,6 @@ int search_music_track(const char *query, MusicTrack *out_track) {
     to_lower_str(start, lower_q, sizeof(lower_q));
     const char *p = lower_q;
 
-    // 1. Strip wake words with optional commas/colons (e.g. "hey sphere, ", "sphere: ")
     const char *wake_prefixes[] = {
         "hey sphere play the song ", "hey sphere play song ", "hey sphere play me the song ", "hey sphere play me ", "hey sphere play ",
         "hey spear play the song ", "hey spear play song ", "hey spear play ",
@@ -1003,7 +980,6 @@ int search_music_track(const char *query, MusicTrack *out_track) {
         }
     }
 
-    // 2. Strip conversational play requests
     const char *play_prefixes[] = {
         "can you please play the song ", "can you please play song ", "can you please play a song ", "can you please play ",
         "could you please play the song ", "could you please play song ", "could you please play ",
@@ -1038,7 +1014,6 @@ int search_music_track(const char *query, MusicTrack *out_track) {
         clean[--d] = '\0';
     }
 
-    // Strip trailing polite filler: " please", " for me", " now"
     if (d > 7 && strcasecmp(clean + d - 7, " please") == 0) {
         clean[d - 7] = '\0';
         d -= 7;
@@ -1056,8 +1031,6 @@ int search_music_track(const char *query, MusicTrack *out_track) {
         clean[sizeof(clean) - 1] = '\0';
     }
 
-    // Step 1: Search for full song audio stream using music_search.py
-    // Escape any quotes in clean string
     char safe_clean[512];
     size_t sc_len = 0;
     for (size_t k = 0; clean[k] && sc_len + 2 < sizeof(safe_clean); k++) {
@@ -1162,7 +1135,6 @@ int search_music_track(const char *query, MusicTrack *out_track) {
 #endif
     }
 
-    // Step 2: Fallback to iTunes API search
     char encoded[512];
     url_encode(clean, encoded, sizeof(encoded));
 

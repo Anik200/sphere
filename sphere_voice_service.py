@@ -1,11 +1,4 @@
 #!/usr/bin/env python3
-"""
-Sphere AI - Cross-Platform Voice Service Daemon
-Supports: Android Termux, Linux (Debian, Ubuntu, Fedora, Arch, etc.), macOS, Windows.
-Implements the bidirectional IPC protocol with sphere_ai native engine:
-- Reads commands on stdin: CMD:SPEAK, CMD:EXIT_SPEAK, CMD:PLAY_MUSIC, CMD:STOP_MUSIC, CMD:WAKE_STANDBY, CMD:LISTEN_QUERY, CMD:EXIT
-- Writes events on stdout: STATUS:READY, MODE:*, STREAM:*, SPEAK_DONE, MUSIC_STARTED, MUSIC_DONE, WAKE, FINAL:*, TIMEOUT, EXIT, AMP:*
-"""
 
 import sys
 import os
@@ -17,12 +10,10 @@ import re
 import math
 import tempfile
 
-# Force UTF-8 stdout
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
 
-# Global State
-current_mode = "STANDBY" # STANDBY, LISTENING, SPEAKING
+current_mode = "STANDBY"
 mode_lock = threading.Lock()
 is_speaking = False
 is_music_playing = False
@@ -31,7 +22,6 @@ current_speaking_proc = None
 current_music_proc = None
 wake_start_time = 0.0
 
-# Regex definitions for commands
 EXIT_REGEX = re.compile(
     r"^(exit|quit|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later|close\s+app|close\s+the\s+app|exit\s+app|quit\s+app|shut\s+down|shutdown|terminate)$",
     re.IGNORECASE
@@ -62,30 +52,25 @@ def is_exit_phrase(text):
     clean = text.strip().strip(".?!, '\"")
     return bool(EXIT_REGEX.match(clean) or EXIT_WAKE_REGEX.match(clean))
 
-# --- Text To Speech (TTS) Engine Detection ---
 def get_available_tts():
-    """Detect the best available TTS command for the current platform."""
-    # 1. espeak-ng / espeak (offline, lightweight, fast, works everywhere including Android Termux)
     if shutil.which("espeak-ng"):
         return "espeak-ng"
     if shutil.which("espeak"):
         return "espeak"
-    # 2. Linux Speech Dispatcher
+
     if shutil.which("spd-say"):
         return "spd-say"
-    # 3. macOS say
+
     if shutil.which("say"):
         return "say"
-    # 4. Android Termux API (fallback only if espeak is absent)
+
     if shutil.which("termux-tts-speak"):
         return "termux-tts-speak"
     return "simulated"
 
 TTS_ENGINE = get_available_tts()
 
-# --- Music Player Detection ---
 def get_available_music_player():
-    """Detect the best available media player for the current platform."""
     if shutil.which("mpv"):
         return "mpv"
     if shutil.which("ffplay"):
@@ -150,7 +135,6 @@ def speak_thread_worker(text, is_exit=False):
     try:
         if TTS_ENGINE in ("espeak-ng", "espeak"):
             if MUSIC_PLAYER == "mpv":
-                # Generate temporary WAV and play via mpv (OpenSL ES on Android, ALSA on Linux)
                 with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
                     tmp_wav = tf.name
                 gen = subprocess.run([TTS_ENGINE, "-s", "155", "-w", tmp_wav, text], capture_output=True)
@@ -174,9 +158,8 @@ def speak_thread_worker(text, is_exit=False):
 
     current_speaking_proc = tts_proc
 
-    # Stream words in cadence matching speech
     accumulated = []
-    # Calculate word delay (approx 160 words per minute = ~350ms per word)
+
     delay = 0.22 if len(words) > 5 else 0.30
 
     for w in words:
@@ -187,7 +170,6 @@ def speak_thread_worker(text, is_exit=False):
         emit("AMP:0.04")
         time.sleep(delay)
 
-    # If tts_proc is running, give it a moment to finish speaking
     if tts_proc and not speech_cancel_flag:
         try:
             tts_proc.wait(timeout=5.0 if is_exit else 2.5)
@@ -247,12 +229,11 @@ def play_music_worker(url):
         set_mode("SPEAKING")
         emit("MUSIC_STARTED")
 
-        # Monitor thread: pulses amplitude so ball visualizer dances with the music
         phase = 0.0
         while is_music_playing and proc.poll() is None:
             time.sleep(0.08)
             phase += 0.25
-            # Periodic beat amplitude simulation for particles deformation
+
             amp = abs(math.sin(phase)) * 0.45 + (0.20 if math.sin(phase * 2.0) > 0.6 else 0.0)
             emit(f"AMP:{amp:.2f}")
 
@@ -266,9 +247,7 @@ def play_music_worker(url):
         emit("MUSIC_DONE")
         set_mode("STANDBY")
 
-# --- Speech Recognition Thread (STT) ---
 def speech_recognition_worker():
-    """Background listener using SpeechRecognition if PyAudio / mic is available."""
     try:
         import speech_recognition as sr
         try:
@@ -292,7 +271,6 @@ def speech_recognition_worker():
 
                 try:
                     if mode == "LISTENING":
-                        # Actively record query (timeout after 7 seconds)
                         audio = r.listen(source, timeout=7.0, phrase_time_limit=12.0)
                         try:
                             text = r.recognize_google(audio).strip()
@@ -314,7 +292,6 @@ def speech_recognition_worker():
                             set_mode("STANDBY")
 
                     elif mode == "STANDBY":
-                        # In standby, listen for wake words or exit
                         audio = r.listen(source, timeout=None, phrase_time_limit=6.0)
                         try:
                             text = r.recognize_google(audio).strip()
@@ -345,7 +322,6 @@ def speech_recognition_worker():
                             pass
 
                     elif speaking:
-                        # While speaking or playing music: only listen for explicit stop or wake barge-in
                         time.sleep(0.3)
 
                 except sr.WaitTimeoutError:
@@ -356,14 +332,11 @@ def speech_recognition_worker():
                     time.sleep(0.5)
 
     except Exception:
-        # No microphone or PyAudio available - gracefully run in command/keyboard driven mode
         pass
 
-# --- Stdin Command Loop ---
 def main():
     emit("STATUS:INITIALIZING")
 
-    # Watchdog thread: immediately terminate if parent process terminates
     if len(sys.argv) > 1:
         try:
             parent_pid = int(sys.argv[1])
@@ -371,7 +344,6 @@ def main():
                 while True:
                     time.sleep(0.5)
                     try:
-                        # os.kill(pid, 0) checks if process exists without sending a signal
                         os.kill(parent_pid, 0)
                     except OSError:
                         stop_music()
@@ -382,7 +354,6 @@ def main():
         except Exception:
             pass
 
-    # Start speech recognition in background thread if mic is available
     stt_thread = threading.Thread(target=speech_recognition_worker, daemon=True)
     stt_thread.start()
 
@@ -439,7 +410,6 @@ def main():
             stop_speech()
             sys.exit(0)
 
-    # EOF reached
     stop_music()
     stop_speech()
     sys.exit(0)

@@ -33,13 +33,11 @@ def score_candidate(entry, query):
     uploader = (entry.get('uploader') or '').lower()
     duration = int(entry.get('duration') or 0)
 
-    # Filter out clips / previews / 1-hour loops / compilations
     if duration > 0 and (duration < 60 or duration > 600):
         return -100
 
     score = 50
 
-    # Strong boost for official artist release / YouTube Music Topic
     if uploader.endswith(' - topic'):
         score += 45
     elif 'vevo' in uploader:
@@ -49,7 +47,6 @@ def score_candidate(entry, query):
     elif 'records' in uploader or 'music' in uploader:
         score += 15
 
-    # Penalize non-song / spam / edit formats
     bad_markers = [
         '1 hour', '10 hours', 'loop', 'reaction', 'reacts', 'tutorial',
         'lesson', 'parody', 'slowed', 'reverb', 'sped up', 'speed up',
@@ -60,27 +57,23 @@ def score_candidate(entry, query):
         if bm in title and bm not in query.lower():
             score -= 40
 
-    # Boost verified music formats
     good_markers = ['official audio', 'official music video', 'official video', 'official lyric video', 'lyrics']
     for gm in good_markers:
         if gm in title:
             score += 15
             break
 
-    # Query keyword match
     q_words = re.findall(r'\w+', query.lower())
     for w in q_words:
         if len(w) > 2 and (w in title or w in uploader):
             score += 12
 
-    # Standard song duration bonus (2 to 5 minutes)
     if 120 <= duration <= 320:
         score += 10
 
     return score
 
 def search_full_song(query):
-    # Check local cache first for instant playback
     cache_dir = os.path.join(tempfile.gettempdir(), 'sphere_music_cache')
     os.makedirs(cache_dir, exist_ok=True)
 
@@ -99,12 +92,10 @@ def search_full_song(query):
         except Exception:
             pass
 
-    # Clean query for search: strip conversational filler
     clean_q = re.sub(r'^(?:can\s+you\s+|please\s+|could\s+you\s+)?(?:play\s+(?:the\s+song\s+|a\s+song\s+|song\s+|track\s+|me\s+)?)+', '', query, flags=re.IGNORECASE).strip()
     if not clean_q or clean_q.lower() in ('music', 'some music', 'a song'):
         clean_q = "Blinding Lights The Weeknd"
 
-    # Step 1: Search YouTube with smart candidate scoring for the exact official song
     try:
         import yt_dlp
         ydl_opts = {
@@ -115,7 +106,6 @@ def search_full_song(query):
             'default_search': 'ytsearch',
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Query directly with top 5 results to pick the official release
             search_term = f"ytsearch5:{clean_q}"
             info = ydl.extract_info(search_term, download=False)
             entries = info.get('entries', []) if info else []
@@ -164,7 +154,6 @@ def search_full_song(query):
     except Exception:
         pass
 
-    # Step 2: Fallback to iTunes API
     try:
         enc = urllib.parse.quote(clean_q)
         req = urllib.request.Request(

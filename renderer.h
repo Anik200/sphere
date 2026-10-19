@@ -8,8 +8,8 @@ extern "C" {
 #endif
 
 typedef struct {
-    float sx, sy, sz; // Sphere base coordinates
-    float tx, ty, tz; // Target coordinates (Happy face)
+    float sx, sy, sz;
+    float tx, ty, tz;
 } Particle;
 
 typedef enum {
@@ -40,5 +40,4 @@ void renderer_cleanup(void);
 #ifdef __cplusplus
 }
 #endif
-
-#endif // RENDERER_H
+#endif

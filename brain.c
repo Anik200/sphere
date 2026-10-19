@@ -20,9 +20,6 @@ static int contains(const char *haystack, const char *needle) {
     return strstr(haystack, needle) != NULL;
 }
 
-// ---------------------------------------------------------
-// 1. Precise Mathematical Reasoning Engine
-// ---------------------------------------------------------
 int brain_evaluate_math(const char *query, char *out_answer, size_t max_len) {
     char lower[512];
     to_lower_str(query, lower, sizeof(lower));
@@ -31,7 +28,6 @@ int brain_evaluate_math(const char *query, char *out_answer, size_t max_len) {
     char op = 0;
     int is_math = 0;
 
-    // Check for square root
     if (contains(lower, "square root of") || contains(lower, "sqrt")) {
         const char *p = strstr(lower, "root of");
         if (p) p += 7;
@@ -51,7 +47,6 @@ int brain_evaluate_math(const char *query, char *out_answer, size_t max_len) {
         }
     }
 
-    // Check for percentage: "X percent of Y" or "X% of Y"
     if (contains(lower, "percent of") || contains(lower, "% of")) {
         const char *p = lower;
         while (*p && !isdigit((unsigned char)*p)) p++;
@@ -69,12 +64,9 @@ int brain_evaluate_math(const char *query, char *out_answer, size_t max_len) {
         }
     }
 
-    // Parse two-operand arithmetic
-    // Look for numbers and operator words or symbols
     const char *p = lower;
     while (*p && !isdigit((unsigned char)*p) && *p != '-') p++;
     if (*p && sscanf(p, "%lf", &num1) == 1) {
-        // Move past first number
         while (*p && (isdigit((unsigned char)*p) || *p == '.' || *p == '-')) p++;
         while (*p && isspace((unsigned char)*p)) p++;
 
@@ -96,7 +88,6 @@ int brain_evaluate_math(const char *query, char *out_answer, size_t max_len) {
         }
 
         if (is_math) {
-            // Find second number
             while (*p && !isdigit((unsigned char)*p) && *p != '-') p++;
             if (*p && sscanf(p, "%lf", &num2) == 1) {
                 double result = 0.0;
@@ -136,9 +127,6 @@ int brain_evaluate_math(const char *query, char *out_answer, size_t max_len) {
     return 0;
 }
 
-// ---------------------------------------------------------
-// 2. Text Normalization & Encyclopedic Cleaning Helpers
-// ---------------------------------------------------------
 static void clean_extract(const char *src, char *dst, size_t max_len) {
     if (!src || !dst || max_len == 0) return;
     size_t d = 0;
@@ -147,9 +135,6 @@ static void clean_extract(const char *src, char *dst, size_t max_len) {
     for (size_t s = 0; src[s] && d + 1 < max_len; s++) {
         char c = src[s];
 
-        // 1. Cleanly skip parenthetical content (e.g. pronunciation, former names, dates)
-        // Scans ahead for the matching closing parenthesis so parentheticals of any length
-        // are skipped atomically without severing words mid-sentence.
         if (c == '(') {
             int depth = 1;
             size_t lookahead = s + 1;
@@ -162,11 +147,10 @@ static void clean_extract(const char *src, char *dst, size_t max_len) {
                 s = lookahead - 1;
                 continue;
             }
-            // Unclosed parenthesis: omit just the '(' symbol to keep text natural
+
             continue;
         }
 
-        // 2. Cleanly skip bracketed content [citation/phonetic]
         if (c == '[') {
             int depth = 1;
             size_t lookahead = s + 1;
@@ -184,22 +168,18 @@ static void clean_extract(const char *src, char *dst, size_t max_len) {
 
         if (c == ')' || c == ']') continue;
 
-        // 3. Normalize whitespace
         if (c == '\n' || c == '\r' || c == '\t') c = ' ';
-        if (c == ' ' && d > 0 && dst[d - 1] == ' ') continue; // collapse double spaces
+        if (c == ' ' && d > 0 && dst[d - 1] == ' ') continue;
 
-        // Remove space before punctuation if parenthetical was stripped immediately before it
         if ((c == ',' || c == '.' || c == ';' || c == '!' || c == ':') && d > 0 && dst[d - 1] == ' ') {
             d--;
         }
 
         dst[d++] = c;
 
-        // 4. Count sentences (stop after 2-3 complete sentences for clean concise speech)
         if (c == '.' || c == '!') {
-            // Avoid treating decimal points (e.g. 8,848.86 m) as sentence endings
             if (isdigit((unsigned char)src[s + 1])) continue;
-            // Avoid splitting on middle-initials or abbreviations (e.g. D.C. or U.S.)
+
             if (s >= 1 && isalpha((unsigned char)src[s - 1]) && isalpha((unsigned char)src[s + 1])) continue;
 
             sentence_count++;
@@ -211,7 +191,7 @@ static void clean_extract(const char *src, char *dst, size_t max_len) {
             }
         }
     }
-    // Trim trailing whitespace
+
     while (d > 0 && (dst[d - 1] == ' ' || dst[d - 1] == '\n' || dst[d - 1] == '\r')) {
         d--;
     }
@@ -222,12 +202,11 @@ static void extract_clean_subject(const char *raw, char *clean, size_t max_len) 
     if (!raw || !clean || max_len == 0) return;
     clean[0] = '\0';
 
-    // 1. Skip UTF-8 BOM if present
     const unsigned char *src = (const unsigned char *)raw;
     if (src[0] == 0xEF && src[1] == 0xBB && src[2] == 0xBF) {
         src += 3;
     }
-    // 2. Skip leading whitespace and quotes
+
     while (*src && (isspace(*src) || *src == '"' || *src == '\'' || *src == '`')) {
         src++;
     }
@@ -298,9 +277,6 @@ static void extract_clean_subject(const char *raw, char *clean, size_t max_len) 
     }
 }
 
-// ---------------------------------------------------------
-// 3. Multi-Layer Sensory Visual Description Synthesizer
-// ---------------------------------------------------------
 void brain_describe_visual(const char *user_query, const char *subject_title, const char *image_caption,
                            const char *web_extract, char *out_desc, size_t max_len) {
     (void)image_caption;
@@ -326,7 +302,6 @@ void brain_describe_visual(const char *user_query, const char *subject_title, co
         clean_extract(web_extract, cleaned_fact, sizeof(cleaned_fact));
     }
 
-    // 1. COMPUTER MOUSE / PERIPHERALS (Prioritized before biological mouse!)
     if (contains(lower_subj, "computer mouse") || contains(lower_subj, "pc mouse") ||
         contains(lower_query, "computer mouse") || contains(lower_query, "pc mouse") ||
         contains(lower_subj, "optical mouse") || contains(lower_subj, "trackball") ||
@@ -337,7 +312,6 @@ void brain_describe_visual(const char *user_query, const char *subject_title, co
             "Its underside is equipped with low-friction PTFE glide pads flanking an optical LED or invisible infrared laser sensor aperture that tracks surface movement at thousands of DPI. "
             "It connects either via a flexible braided USB cable extending from its front or operates wirelessly with a sleek rechargeable battery chassis.");
 
-    // 2. BIOLOGICAL MOUSE / RODENTS
     } else if (contains(lower_subj, "mouse") || contains(lower_subj, "mice") || contains(lower_subj, "rodent") ||
                contains(lower_subj, "house mouse") || contains(lower_subj, "field mouse") || contains(lower_query, "rodent")) {
         snprintf(visual_core, sizeof(visual_core),
@@ -347,37 +321,31 @@ void brain_describe_visual(const char *user_query, const char *subject_title, co
             "On its head are alert, rounded, translucent ears and glossy dark bead-like eyes. "
             "It moves on miniature four-toed front paws and five-toed hind feet equipped with delicate claws, terminating in a long, thin, scaly cylindrical tail nearly equal to the length of its body used for balance.");
 
-    // 3. KEYBOARD
     } else if (contains(lower_subj, "keyboard") || contains(lower_query, "keyboard")) {
         snprintf(visual_core, sizeof(visual_core),
             "A computer keyboard is a horizontal rectangular input deck arranged with staggered rows of tiered keycaps representing alphanumeric characters and functions. "
             "Each keycap is seated atop an individual mechanical switch or low-profile scissor membrane with distinct tactile travel, frequently accented by programmable per-key RGB backlighting and framed in an anodized aluminum top plate.");
 
-    // 4. MONITOR / DISPLAY SCREEN
     } else if (contains(lower_subj, "monitor") || contains(lower_subj, "display") || contains(lower_query, "computer monitor")) {
         snprintf(visual_core, sizeof(visual_core),
             "A computer monitor features a thin rectangular flat or gently curved panel framed by micro-edge bezels, mounted to an adjustable weighted pedestal stand. "
             "Its front panel has an anti-glare matte coating that illuminates millions of microscopic LED, IPS, or OLED pixels to render high-resolution digital imagery, backed by display ports and cooling vents on the rear.");
 
-    // 5. LAPTOP / NOTEBOOK
     } else if (contains(lower_subj, "laptop") || contains(lower_subj, "notebook") || contains(lower_subj, "macbook")) {
         snprintf(visual_core, sizeof(visual_core),
             "A laptop computer is a sleek, portable clamshell system engineered with a hinged aluminum or composite chassis. "
             "When opened, it reveals an ultra-thin widescreen LED display embedded in the upper lid, paired with a backlit chiclet keyboard and a smooth multi-touch glass trackpad integrated into the lower palm deck.");
 
-    // 6. SMARTPHONE / MOBILE PHONE
     } else if (contains(lower_subj, "smartphone") || contains(lower_subj, "phone") || contains(lower_subj, "iphone") || contains(lower_subj, "android")) {
         snprintf(visual_core, sizeof(visual_core),
             "A modern smartphone features a slim handheld slate profile bounded by rounded aerospace aluminum or titanium rails, fronted by an edge-to-edge tempered glass touchscreen. "
             "On the rear frosted glass surface sits a raised multi-lens camera module with optical lenses, flash, and sensor apertures.");
 
-    // 7. HEADPHONES / HEADSET
     } else if (contains(lower_subj, "headphone") || contains(lower_subj, "headset") || contains(lower_subj, "earphone")) {
         snprintf(visual_core, sizeof(visual_core),
             "Headphones consist of two cushioned acoustic earcups lined with plush memory foam and leatherette, contoured to envelope or sit against the ears. "
             "The earcups are suspended from an adjustable padded steel headband, integrating dynamic speaker drivers and micro-mesh acoustic grilles.");
 
-    // 8. CAR / AUTOMOBILE
     } else if (contains(lower_subj, "car") || contains(lower_subj, "automobile") || contains(lower_subj, "vehicle") || contains(lower_subj, "ferrari") || contains(lower_subj, "porsche")) {
         snprintf(visual_core, sizeof(visual_core),
             "A motor car features a low-slung, aerodynamic metallic chassis engineered for dynamic airflow. "
@@ -385,68 +353,57 @@ void brain_describe_visual(const char *user_query, const char *subject_title, co
             "The cabin forms a central passenger cockpit enclosed by expansive curved safety glass, framed by high-tensile roof pillars and side mirrors. "
             "Along the sides, crisp character body lines run towards pronounced wheel arches housing circular rubber tires with radial tread patterns wrapped around alloy rims.");
 
-    // 9. AIRPLANE / AIRCRAFT
     } else if (contains(lower_subj, "airplane") || contains(lower_subj, "plane") || contains(lower_subj, "aircraft") || contains(lower_subj, "jet")) {
         snprintf(visual_core, sizeof(visual_core),
             "An aircraft features a streamlined cylindrical pressurized fuselage tapering to a conical nose and vertical empennage. "
             "Extending horizontally are high-aspect-ratio swept aerodynamic wings fitted with winglets and underslung turbofan engines. "
             "The surface gleams with smooth, reflective aviation composites punctuated by transparent cockpit canopies and navigation strobe lights.");
 
-    // 10. TIGER / LION / BIG CAT
     } else if (contains(lower_subj, "tiger") || contains(lower_subj, "lion") || contains(lower_subj, "cheetah") || contains(lower_subj, "leopard")) {
         snprintf(visual_core, sizeof(visual_core),
             "A magnificent apex predator with a muscular, agile quadrupedal anatomy, broad chest, and powerful shoulders. "
             "Its dense coat is patterned with distinctive camouflage markings, framing an intense cranial structure with forward-facing amber eyes, sensitive whiskers, and broad padded paws with lethal retractable claws.");
 
-    // 11. CAT / FELINE
     } else if (contains(lower_subj, "cat") || contains(lower_subj, "kitten") || contains(lower_subj, "feline")) {
         snprintf(visual_core, sizeof(visual_core),
             "A domestic cat is a lithe, graceful small carnivore with a flexible spine, soft dense fur, and silent padded paws with retractable claws. "
             "Its expressive face is framed by erect triangular ears, luminous forward-facing eyes with slit pupils, and delicate sensory whiskers radiating from its muzzle.");
 
-    // 12. DOG / CANINE
     } else if (contains(lower_subj, "dog") || contains(lower_subj, "puppy") || contains(lower_subj, "canine")) {
         snprintf(visual_core, sizeof(visual_core),
             "A domestic dog possesses an athletic mammalian build with a fur-covered coat, an expressive snout tipped with a moist sensory nose pad, communicative ears that may be perky or flopped, and an energetic wagging tail.");
 
-    // SPIDER / ARACHNID
     } else if (contains(lower_subj, "spider") || contains(lower_subj, "arachnid") || contains(lower_query, "spider")) {
         snprintf(visual_core, sizeof(visual_core),
             "A spider is an eight-legged predatory arachnid characterized by a two-part anatomy: an unsegmented cephalothorax fused to a bulbous abdomen. "
             "Its head is clustered with multiple glossy obsidian simple eyes above downward-pointing chelicerae fangs. "
             "Radiating from its body are four pairs of articulated jointed legs coated in sensitive acoustic setae hairs and tiny tarsal claws, with specialized silk-spinning spinnerets located at the posterior tip of its abdomen.");
 
-    // 13. SUNFLOWER / FLOWER / ROSE
     } else if (contains(lower_subj, "sunflower") || contains(lower_subj, "flower") || contains(lower_subj, "rose") || contains(lower_subj, "tulip")) {
         snprintf(visual_core, sizeof(visual_core),
             "A vibrant botanical specimen dominated by colorful radiating petals arranged symmetrically around a central seed disc. "
             "It is supported by a slender, fibrous green stem dressed with textured leaves, showcasing vivid organic pigmentation designed to attract pollinators.");
 
-    // 14. TREE / FOREST
     } else if (contains(lower_subj, "tree") || contains(lower_subj, "oak") || contains(lower_subj, "pine") || contains(lower_subj, "forest")) {
         snprintf(visual_core, sizeof(visual_core),
             "A majestic perennial plant anchored by a thick, vertical wooden trunk wrapped in deeply fissured, textured bark. "
             "From the trunk, sprawling woody branches divide outwards into a towering fractal canopy filled with vibrant green foliage or needle-like leaves.");
 
-    // 15. BLACK HOLE
     } else if (contains(lower_subj, "black hole") || contains(lower_subj, "singularity")) {
         snprintf(visual_core, sizeof(visual_core),
             "A black hole is marked by the event horizon - a pitch-black, perfect gravitational shadow in deep space where no light can escape. "
             "Surrounding this absolute void is a superheated, swirling accretion disk of plasma and cosmic dust that glows with radiant amber and sapphire hues, framed by a halo of gravitationally bent starlight.");
 
-    // 16. GALAXY / SPACE
     } else if (contains(lower_subj, "galaxy") || contains(lower_subj, "nebula") || contains(lower_subj, "space")) {
         snprintf(visual_core, sizeof(visual_core),
             "A spiral galaxy appears as a vast, luminous cosmic vortex floating against the deep void. "
             "At its center shines a dense, warm golden core of ancient stars, out of which graceful curved spiral arms sweep across light-years, illuminated by sapphire newborn stars and veined with ribbons of dark interstellar dust.");
 
-    // 17. EIFFEL TOWER / MONUMENT / PYRAMID
     } else if (contains(lower_subj, "eiffel") || contains(lower_subj, "tower") || contains(lower_subj, "pyramid") || contains(lower_subj, "building")) {
         snprintf(visual_core, sizeof(visual_core),
             "A monumental architectural landmark defined by towering verticality and intricate geometric engineering. "
             "Its structure rises from expansive foundation arches, tapering gracefully through elevated platforms towards an illuminated summit spire casting dramatic silhouettes against the skyline.");
 
-    // 18. DYNAMIC UNIVERSAL DESCRIPTOR (for any other subject)
     } else {
         if (strlen(cleaned_fact) > 0) {
             snprintf(out_desc, max_len, "Visually, %s: %s", subject, cleaned_fact);
@@ -457,7 +414,6 @@ void brain_describe_visual(const char *user_query, const char *subject_title, co
         }
     }
 
-    // Combine visual domain description with encyclopedic web facts
     if (strlen(cleaned_fact) > 0) {
         snprintf(out_desc, max_len, "%s %s", visual_core, cleaned_fact);
     } else {
@@ -465,9 +421,6 @@ void brain_describe_visual(const char *user_query, const char *subject_title, co
     }
 }
 
-// ---------------------------------------------------------
-// 4. Conversational & General Knowledge Synthesizer
-// ---------------------------------------------------------
 void brain_explain_general(const char *query, const char *subject_title, const char *web_extract, char *out_answer, size_t max_len) {
     char cleaned[2048] = {0};
     if (web_extract && strlen(web_extract) > 0) {
@@ -497,7 +450,6 @@ void brain_explain_general(const char *query, const char *subject_title, const c
     }
 
     if (strlen(cleaned) > 0) {
-        // Conversational presentation with pedagogical and curious framing
         if (contains(lower_q, "why do") || contains(lower_q, "why does") || contains(lower_q, "why is") || contains(lower_q, "why are") || contains(lower_q, "why ")) {
             snprintf(out_answer, max_len,
                 "Here is why this happens: %s It is a fascinating example of natural mechanics! What other curious questions do you have?",
@@ -524,11 +476,7 @@ void brain_explain_general(const char *query, const char *subject_title, const c
         subj);
 }
 
-// ---------------------------------------------------------
-// 4.5 Ball Customization, 3D Facial Expressions & Rotating Jokes
-// ---------------------------------------------------------
 static int brain_handle_customization_and_personality(const char *lower, char *out_response, size_t max_len, int *out_is_happy) {
-    // 1. Ball Customization Menu Request ("hey sphere lets change the ball" / "customize the ball")
     if (contains(lower, "change the ball") || contains(lower, "change ball") ||
         contains(lower, "customize the ball") || contains(lower, "customise the ball") ||
         contains(lower, "customize ball") || contains(lower, "ball options") ||
@@ -542,7 +490,6 @@ static int brain_handle_customization_and_personality(const char *lower, char *o
         return 1;
     }
 
-    // 2. Ball Color Commands
     int is_color_cmd = (contains(lower, "color") || contains(lower, "colour") ||
                         contains(lower, "make the ball") || contains(lower, "make ball") ||
                         contains(lower, "turn the ball") || contains(lower, "turn ball") ||
@@ -553,7 +500,6 @@ static int brain_handle_customization_and_personality(const char *lower, char *o
         contains(lower, "ball green") || contains(lower, "ball yellow") || contains(lower, "ball purple") ||
         contains(lower, "ball cyan") || contains(lower, "ball pink") || contains(lower, "ball orange") ||
         contains(lower, "ball white")) {
-
         if (contains(lower, "red") || contains(lower, "crimson") || contains(lower, "ruby")) {
             renderer_set_custom_color(COLOR_RED);
             snprintf(out_response, max_len, "Changing my particle sphere to vibrant crimson red! A powerful and bold aesthetic. How does it look?");
@@ -611,7 +557,6 @@ static int brain_handle_customization_and_personality(const char *lower, char *o
         }
     }
 
-    // 3. Random Humorous Jokes & Laughing
     if (contains(lower, "joke") || contains(lower, "tell me a joke") || contains(lower, "random joke") ||
         contains(lower, "drop a joke") || contains(lower, "another joke") || contains(lower, "tell a joke") ||
         contains(lower, "funny joke") || contains(lower, "tell me jokes") || contains(lower, "give me a joke") ||
@@ -673,7 +618,6 @@ static int brain_handle_customization_and_personality(const char *lower, char *o
         return 1;
     }
 
-    // 4. 3D Facial Expression Commands: cry, laugh, smile, angry, etc.
     if (contains(lower, "angry") || contains(lower, "mad") || contains(lower, "furious") ||
         contains(lower, "rage") || contains(lower, "look mad") || contains(lower, "be mad")) {
         renderer_set_expression(EXPR_ANGRY);
@@ -739,11 +683,7 @@ static int brain_handle_customization_and_personality(const char *lower, char *o
     return 0;
 }
 
-// ---------------------------------------------------------
-// 5. Human Interactive Conversational Personality Engine
-// ---------------------------------------------------------
 static int brain_handle_conversation(const char *lower, char *out_response, size_t max_len, int *out_is_happy) {
-    // 1. How are you & daily check-ins
     if (contains(lower, "how are you") || contains(lower, "how're you") || contains(lower, "how you doing") ||
         contains(lower, "how is it going") || contains(lower, "how's it going") ||
         contains(lower, "how is your day") || contains(lower, "how's your day") ||
@@ -753,7 +693,6 @@ static int brain_handle_conversation(const char *lower, char *out_response, size
         return 1;
     }
 
-    // 2. Daily Greetings
     if (contains(lower, "good morning")) {
         snprintf(out_response, max_len,
             "Good morning! I hope you had a restful night and are greeted by an inspiring day ahead. What shall we explore or talk about today?");
@@ -782,7 +721,6 @@ static int brain_handle_conversation(const char *lower, char *out_response, size
         return 1;
     }
 
-    // 3. Empathy & Feelings
     if (contains(lower, "sad") || contains(lower, "bad day") || contains(lower, "feeling down") ||
         contains(lower, "depressed") || contains(lower, "unhappy") || contains(lower, "rough day") ||
         contains(lower, "feeling low") || contains(lower, "heartbroken") || contains(lower, "stressed")) {
@@ -808,7 +746,6 @@ static int brain_handle_conversation(const char *lower, char *out_response, size
         return 1;
     }
 
-    // 4. Identity, Persona & Philosophy
     if (contains(lower, "who are you") || contains(lower, "what are you") || contains(lower, "who made you") ||
         contains(lower, "who created you") || contains(lower, "tell me about yourself")) {
         snprintf(out_response, max_len,
@@ -872,7 +809,6 @@ static int brain_handle_conversation(const char *lower, char *out_response, size
         return 1;
     }
 
-    // 5. Praise & Compliments
     if (contains(lower, "thank") || contains(lower, "awesome") || contains(lower, "great job") ||
         contains(lower, "good job") || contains(lower, "love you") || contains(lower, "you're smart") ||
         contains(lower, "you are smart") || contains(lower, "you're cool") || contains(lower, "smile") ||
@@ -883,14 +819,9 @@ static int brain_handle_conversation(const char *lower, char *out_response, size
         return 1;
     }
 
-
-
     return 0;
 }
 
-// ---------------------------------------------------------
-// 6. Cognitive Reasoning & Decision Engine
-// ---------------------------------------------------------
 static void clean_option_token(char *token) {
     if (!token) return;
     char *p = token;
@@ -952,7 +883,6 @@ static int parse_comparative_query(const char *lower, char *optA, size_t max_a, 
     optA[0] = '\0';
     optB[0] = '\0';
 
-    // 1. "between ... and ..."
     const char *p_between = strstr(lower, "between ");
     if (p_between) {
         const char *p_and = strstr(p_between + 8, " and ");
@@ -970,7 +900,6 @@ static int parse_comparative_query(const char *lower, char *optA, size_t max_a, 
         }
     }
 
-    // 2. "... vs ..." or "... versus ..."
     const char *p_vs = strstr(lower, " vs ");
     size_t vs_skip = 4;
     if (!p_vs) {
@@ -1007,7 +936,6 @@ static int parse_comparative_query(const char *lower, char *optA, size_t max_a, 
         }
     }
 
-    // 3. "... or ..."
     const char *p_or = strstr(lower, " or ");
     if (p_or) {
         const char *startA = lower;
@@ -1054,10 +982,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
     char optB[128] = {0};
     int has_comparison = parse_comparative_query(lower, optA, sizeof(optA), optB, sizeof(optB));
 
-    // =========================================================
-    // 1. FASHION & APPAREL DECISION MATRIX
-    // =========================================================
-    // 1a. Cheque vs Flat Shirt (Target Query)
     int is_cheque_flat = 0;
     if ((contains(lower, "cheque") || contains(lower, "checkered") || contains(lower, "plaid") || contains(lower, "gingham")) &&
         (contains(lower, "flat") || contains(lower, "plain") || contains(lower, "solid"))) {
@@ -1082,7 +1006,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 1b. Cotton vs Linen
     if (contains(lower, "cotton") && contains(lower, "linen")) {
         snprintf(out_response, max_len,
             "Comparing cotton and linen shirts: "
@@ -1092,7 +1015,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 1c. Sneakers vs Leather Shoes / Loafers
     if (contains(lower, "sneaker") && (contains(lower, "leather") || contains(lower, "loafer") || contains(lower, "dress shoe") || contains(lower, "formal shoe"))) {
         snprintf(out_response, max_len,
             "Comparing sneakers and leather shoes: "
@@ -1102,7 +1024,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 1d. Slim Fit vs Regular / Relaxed Fit
     if (contains(lower, "slim fit") && (contains(lower, "regular fit") || contains(lower, "relaxed fit") || contains(lower, "classic fit"))) {
         snprintf(out_response, max_len,
             "Choosing between slim fit and regular fit: "
@@ -1112,7 +1033,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 1e. Suit Colors: Navy vs Black vs Charcoal / Grey
     if (contains(lower, "suit") && ((contains(lower, "navy") || contains(lower, "blue")) && (contains(lower, "black") || contains(lower, "charcoal") || contains(lower, "grey")))) {
         snprintf(out_response, max_len,
             "Choosing the right suit color: "
@@ -1123,7 +1043,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 1f. Smartwatch vs Analog / Mechanical Watch
     if (contains(lower, "smartwatch") && (contains(lower, "analog") || contains(lower, "mechanical") || contains(lower, "traditional watch"))) {
         snprintf(out_response, max_len,
             "Comparing smartwatches and analog mechanical watches: "
@@ -1133,7 +1052,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 1g. General Shirt Advice
     if (contains(lower, "shirt") && (contains(lower, "what shirt") || contains(lower, "which shirt") || contains(lower, "should i wear") || contains(lower, "should i choose") || contains(lower, "how to choose a shirt"))) {
         snprintf(out_response, max_len,
             "To pick the ideal shirt, focus on fabric, weave, and formality: "
@@ -1144,10 +1062,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // =========================================================
-    // 2. SOFTWARE ENGINEERING & CODING DECISION MATRIX
-    // =========================================================
-    // 2a. Best Programming Language (Target Query)
     int is_best_prog_lang = (
         (contains(lower, "programming language") || contains(lower, "coding language") ||
          (contains(lower, "language") && (contains(lower, "programming") || contains(lower, "code") || contains(lower, "coding")))) &&
@@ -1167,7 +1081,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 2b. Python vs JavaScript
     if (contains(lower, "python") && (contains(lower, "javascript") || contains(lower, "js"))) {
         snprintf(out_response, max_len,
             "Comparing Python and JavaScript: "
@@ -1177,7 +1090,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 2c. C vs Rust vs C++
     if ((contains(lower, "rust") && (contains(lower, "c++") || contains(lower, "cpp") || contains(lower, " c "))) ||
         (contains(lower, "c vs c++") || contains(lower, "c++ vs c"))) {
         snprintf(out_response, max_len,
@@ -1189,7 +1101,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 2d. React vs Vue vs Angular
     if (contains(lower, "react") && (contains(lower, "vue") || contains(lower, "angular"))) {
         snprintf(out_response, max_len,
             "Comparing frontend frameworks (React vs Vue vs Angular): "
@@ -1200,7 +1111,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 2e. SQL vs NoSQL
     if (contains(lower, "sql") && contains(lower, "nosql")) {
         snprintf(out_response, max_len,
             "Comparing SQL and NoSQL databases: "
@@ -1210,7 +1120,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 2f. Linux vs Windows vs macOS
     if ((contains(lower, "linux") && contains(lower, "windows")) ||
         (contains(lower, "mac") && (contains(lower, "windows") || contains(lower, "linux")))) {
         snprintf(out_response, max_len,
@@ -1222,10 +1131,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // =========================================================
-    // 3. HARDWARE & GADGET DECISION MATRIX
-    // =========================================================
-    // 3a. Laptop vs Desktop
     if (contains(lower, "laptop") && contains(lower, "desktop")) {
         snprintf(out_response, max_len,
             "When deciding between a laptop and a desktop: "
@@ -1235,7 +1140,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 3b. OLED vs IPS
     if (contains(lower, "oled") && (contains(lower, "ips") || contains(lower, "lcd") || contains(lower, "led"))) {
         snprintf(out_response, max_len,
             "Comparing OLED and IPS display technologies: "
@@ -1245,7 +1149,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 3c. Keyboard Switches: Red vs Brown vs Blue
     if ((contains(lower, "red") || contains(lower, "brown") || contains(lower, "blue")) &&
         (contains(lower, "switch") || contains(lower, "switches"))) {
         snprintf(out_response, max_len,
@@ -1257,7 +1160,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 3d. iOS vs Android
     if ((contains(lower, "ios") || contains(lower, "iphone")) && contains(lower, "android")) {
         snprintf(out_response, max_len,
             "Comparing iOS and Android: "
@@ -1267,7 +1169,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 3e. SSD vs HDD
     if (contains(lower, "ssd") && contains(lower, "hdd")) {
         snprintf(out_response, max_len,
             "Comparing SSDs and HDDs: "
@@ -1277,7 +1178,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 3f. Best Laptop / Best Computer
     if (contains(lower, "best laptop") || contains(lower, "best computer") || (contains(lower, "recommend") && contains(lower, "laptop"))) {
         snprintf(out_response, max_len,
             "To choose the best laptop, match the machine to your primary workload: "
@@ -1289,7 +1189,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 3g. Best Smartphone
     if (contains(lower, "best smartphone") || contains(lower, "best phone") || (contains(lower, "recommend") && contains(lower, "phone"))) {
         snprintf(out_response, max_len,
             "To select the best smartphone, consider the leading flagship tiers: "
@@ -1300,10 +1199,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // =========================================================
-    // 4. LIFESTYLE, HEALTH & STRATEGIC DECISIONS
-    // =========================================================
-    // 4a. Coffee vs Tea
     if (contains(lower, "coffee") && contains(lower, "tea")) {
         snprintf(out_response, max_len,
             "Comparing coffee and tea: "
@@ -1313,7 +1208,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 4b. Rent vs Buy (Home)
     if (contains(lower, "rent") && contains(lower, "buy") && (contains(lower, "house") || contains(lower, "home") || contains(lower, "property") || contains(lower, "apartment"))) {
         snprintf(out_response, max_len,
             "Evaluating renting versus buying a home: "
@@ -1323,7 +1217,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 4c. Cardio vs Weightlifting
     if (contains(lower, "cardio") && (contains(lower, "weight") || contains(lower, "lifting") || contains(lower, "strength"))) {
         snprintf(out_response, max_len,
             "Comparing cardio and weightlifting for health and fitness: "
@@ -1333,7 +1226,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 4d. Physical Books vs E-readers / Kindle
     if (contains(lower, "book") && (contains(lower, "kindle") || contains(lower, "ereader") || contains(lower, "e-reader") || contains(lower, "ebook"))) {
         snprintf(out_response, max_len,
             "Comparing physical books and e-readers: "
@@ -1343,7 +1235,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // 4e. Cat vs Dog
     if ((contains(optA, "cat") && contains(optB, "dog")) || (contains(optA, "dog") && contains(optB, "cat")) ||
         (contains(lower, "cat") && contains(lower, "dog") && (contains(lower, "choose") || contains(lower, "better") || contains(lower, "pick")))) {
         snprintf(out_response, max_len,
@@ -1354,9 +1245,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // =========================================================
-    // 5. UNIVERSAL COMPARATIVE PARSER (Option A vs Option B)
-    // =========================================================
     if (has_comparison && strlen(optA) > 0 && strlen(optB) > 0 && strcmp(optA, optB) != 0) {
         char capA[128] = {0};
         char capB[128] = {0};
@@ -1373,9 +1261,6 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
         return 1;
     }
 
-    // =========================================================
-    // 6. UNIVERSAL "BEST OF" / RECOMMENDATION EVALUATOR
-    // =========================================================
     if (contains(lower, "what is the best") || contains(lower, "which is the best") ||
         contains(lower, "what's the best") || contains(lower, "recommend the best")) {
         const char *p = strstr(lower, "best ");
@@ -1403,15 +1288,11 @@ int brain_reason_decision(const char *user_query, char *out_response, size_t max
     return 0;
 }
 
-// ---------------------------------------------------------
-// 7. Direct Conversational, Mathematical & System Dispatcher
-// ---------------------------------------------------------
 int brain_handle_direct(const char *user_query, char *out_response, size_t max_len, int *out_is_happy) {
     if (!user_query || !out_response || max_len == 0) return 0;
     out_response[0] = '\0';
     if (out_is_happy) *out_is_happy = 0;
 
-    // 1. Math calculation check (0ms instant response)
     if (brain_evaluate_math(user_query, out_response, max_len)) {
         return 1;
     }
@@ -1419,17 +1300,14 @@ int brain_handle_direct(const char *user_query, char *out_response, size_t max_l
     char lower[512];
     to_lower_str(user_query, lower, sizeof(lower));
 
-    // 1.5 Ball Customization, 3D Facial Expressions, Colors & Rotating Jokes
     if (brain_handle_customization_and_personality(lower, out_response, max_len, out_is_happy)) {
         return 1;
     }
 
-    // 2. Interactive Human Conversation Check
     if (brain_handle_conversation(lower, out_response, max_len, out_is_happy)) {
         return 1;
     }
 
-    // 3. Local System Time & Date (via local hardware clock)
     if (contains(lower, "what time") || contains(lower, "current time") || strcmp(lower, "time") == 0) {
         time_t now = time(NULL);
         struct tm *t = localtime(&now);
@@ -1449,7 +1327,6 @@ int brain_handle_direct(const char *user_query, char *out_response, size_t max_l
         return 1;
     }
 
-    // 4. Capability & Interactive Chat Intent
     if (contains(lower, "chat with me") || contains(lower, "can we chat") || contains(lower, "talk to me") ||
         contains(lower, "interactive chat") || strcmp(lower, "can you talk") == 0 || strcmp(lower, "can we talk") == 0) {
         snprintf(out_response, max_len,
@@ -1471,9 +1348,6 @@ int brain_handle_direct(const char *user_query, char *out_response, size_t max_l
     return 0;
 }
 
-// ---------------------------------------------------------
-// 7. Master Brain Think Function
-// ---------------------------------------------------------
 int brain_think(const char *user_query, const char *subject_title, const char *web_extract,
                 const char *image_caption, const char *image_url,
                 char *out_response, size_t max_len, int *out_is_happy) {
@@ -1482,12 +1356,10 @@ int brain_think(const char *user_query, const char *subject_title, const char *w
     out_response[0] = '\0';
     if (out_is_happy) *out_is_happy = 0;
 
-    // Check direct conversational / math / system queries first
     if (brain_handle_direct(user_query, out_response, max_len, out_is_happy)) {
         return 1;
     }
 
-    // Check cognitive reasoning & decision queries
     if (brain_reason_decision(user_query, out_response, max_len, out_is_happy)) {
         return 1;
     }
@@ -1495,7 +1367,6 @@ int brain_think(const char *user_query, const char *subject_title, const char *w
     char lower[512];
     to_lower_str(user_query, lower, sizeof(lower));
 
-    // Explicit Visual Appearance Request Check
     int is_visual_request = (contains(lower, "look like") ||
                              contains(lower, "looks like") ||
                              contains(lower, "looking like") ||

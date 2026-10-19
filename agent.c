@@ -53,21 +53,17 @@ int agent_process_query(const char *query, char *out_response, size_t max_len, i
     out_response[0] = '\0';
     if (out_is_happy) *out_is_happy = 0;
 
-    // 1. Direct interactive conversational / math / system check (0ms instant response)
     if (brain_handle_direct(query, out_response, max_len, out_is_happy)) {
         return 1;
     }
 
-    // 2. Cognitive Reasoning & Decision Engine (tradeoffs, comparisons, style, engineering)
     if (brain_reason_decision(query, out_response, max_len, out_is_happy)) {
         return 1;
     }
 
-    // 3. Perform Web & Image Search for real-world knowledge and live imagery
     SearchResult res;
     int search_found = search_web_and_images(query, &res);
 
-    // 3. Process through custom native C Brain
     return brain_think(
         query,
         search_found ? res.title : "",

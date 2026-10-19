@@ -93,7 +93,6 @@ namespace SphereVoiceEngine {
             Console.WriteLine("STATUS:INITIALIZING");
             Console.Out.Flush();
 
-            // Watchdog thread: immediately abort speech and exit if parent process terminates
             if (args != null && args.Length > 0) {
                 int parentPid;
                 if (int.TryParse(args[0], out parentPid)) {
@@ -112,7 +111,6 @@ namespace SphereVoiceEngine {
             }
 
             try {
-                // Initialize Synthesizer
                 synth = new SpeechSynthesizer();
                 synth.Rate = 1;
                 synth.SpeakProgress += Synth_SpeakProgress;
@@ -125,7 +123,6 @@ namespace SphereVoiceEngine {
                     }
                 }
 
-                // Initialize Recognizer
                 CultureInfo culture = new CultureInfo("en-US");
                 try {
                     sre = new SpeechRecognitionEngine(culture);
@@ -139,7 +136,6 @@ namespace SphereVoiceEngine {
                     sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(250);
                 } catch { }
 
-                // 1. Wake Grammar (Expanded with phonetic variations: spear, fear, spare, okay sphere, wake up, etc.)
                 Choices wakeChoices = new Choices(new string[] {
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                     "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay sphere",
@@ -158,7 +154,6 @@ namespace SphereVoiceEngine {
                 wakeGrammar.Weight = 1.0f;
                 sre.LoadGrammar(wakeGrammar);
 
-                // 2. Wake + Dictation Grammar (Direct queries in one breath)
                 Choices wakePrefixChoices = new Choices(new string[] {
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                     "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
@@ -173,13 +168,11 @@ namespace SphereVoiceEngine {
                 wakeDictGrammar.Weight = 0.5f;
                 sre.LoadGrammar(wakeDictGrammar);
 
-                // 3. Dictation Grammar - Only enabled during active Listening mode to prevent noise hallucinations
                 dictGrammar = new DictationGrammar();
                 dictGrammar.Name = "DictationGrammar";
                 sre.LoadGrammar(dictGrammar);
                 dictGrammar.Enabled = false;
 
-                // 4. Interrupt Grammar (Barge-in while speaking or playing music)
                 Choices interruptChoices = new Choices(new string[] {
                     "stop", "stop it", "stop music", "stop the music", "stop song", "stop playing", "stop talking",
                     "pause", "pause music", "pause the music", "pause song",
@@ -201,7 +194,6 @@ namespace SphereVoiceEngine {
                 sre.LoadGrammar(interruptGrammar);
                 interruptGrammar.Enabled = false;
 
-                // Event Handlers
                 sre.SpeechHypothesized += Sre_SpeechHypothesized;
                 sre.SpeechRecognized += Sre_SpeechRecognized;
                 sre.SpeechRecognitionRejected += Sre_SpeechRecognitionRejected;
@@ -213,12 +205,10 @@ namespace SphereVoiceEngine {
                 Console.WriteLine("STATUS:READY");
                 Console.Out.Flush();
 
-                // Background stdin command processor thread
                 Thread cmdThread = new Thread(CommandLoop);
                 cmdThread.IsBackground = true;
                 cmdThread.Start();
 
-                // Background watchdog for silence timeout during active listening
                 while (true) {
                     Thread.Sleep(100);
                     lock (modeLock) {
@@ -254,7 +244,6 @@ namespace SphereVoiceEngine {
             foreach (string kw in sphereKeywords) {
                 int idx = lower.IndexOf(kw);
                 if (idx != -1) {
-                    // Ensure keyword starts at word boundary
                     if (idx > 0 && char.IsLetterOrDigit(lower[idx - 1])) continue;
                     int queryStart = idx + kw.Length;
                     if (queryStart < lower.Length && char.IsLetterOrDigit(lower[queryStart])) continue;
@@ -324,7 +313,6 @@ namespace SphereVoiceEngine {
                     return;
                 }
 
-                // Fallback: Windows Media Player ActiveX
                 Type wmpType = Type.GetTypeFromProgID("WMPlayer.OCX");
                 if (wmpType == null) {
                     Console.WriteLine("ERROR:NO_PLAYER_FOUND");
@@ -349,7 +337,7 @@ namespace SphereVoiceEngine {
                             try {
                                 if (mediaPlayer != null) {
                                     int state = (int)mediaPlayer.playState;
-                                    // 3 = Playing, 6 = Buffering, 9 = Transitioning, 10 = Ready
+
                                     if (state == 3 || state == 6 || state == 9 || state == 10) {
                                         hasStarted = true;
                                         stoppedCount = 0;
@@ -359,7 +347,6 @@ namespace SphereVoiceEngine {
                                         Console.WriteLine("AMP:" + beat.ToString("0.00", CultureInfo.InvariantCulture));
                                         Console.Out.Flush();
                                     } else if (state == 8) {
-                                        // 8 = MediaEnded
                                         isMusicPlaying = false;
                                         Console.WriteLine("MUSIC_DONE");
                                         Console.Out.Flush();
@@ -367,7 +354,7 @@ namespace SphereVoiceEngine {
                                         break;
                                     } else if (hasStarted && state == 1) {
                                         stoppedCount++;
-                                        if (stoppedCount >= 4) { // 1 second of confirmed stop
+                                        if (stoppedCount >= 4) {
                                             isMusicPlaying = false;
                                             Console.WriteLine("MUSIC_DONE");
                                             Console.Out.Flush();
@@ -425,22 +412,22 @@ namespace SphereVoiceEngine {
                 if (newMode == ServiceMode.Standby) {
                     wakeGrammar.Enabled = true;
                     wakeDictGrammar.Enabled = true;
-                    dictGrammar.Enabled = false; // Clean standby: only listen for wake phrases, ignore room noise
+                    dictGrammar.Enabled = false;
                     interruptGrammar.Enabled = false;
                     Console.WriteLine("MODE:STANDBY");
                     Console.Out.Flush();
                 } else if (newMode == ServiceMode.Listening) {
-                    wakeGrammar.Enabled = false; // Disable wake words so dictation doesn't fight wake grammar
+                    wakeGrammar.Enabled = false;
                     wakeDictGrammar.Enabled = false;
-                    dictGrammar.Enabled = true; // Dedicated, accurate dictation
+                    dictGrammar.Enabled = true;
                     interruptGrammar.Enabled = true;
                     Console.WriteLine("MODE:LISTENING");
                     Console.Out.Flush();
                 } else if (newMode == ServiceMode.Speaking) {
                     wakeGrammar.Enabled = false;
-                    wakeDictGrammar.Enabled = false; // Disable dictation so it does NOT swallow barge-in commands!
+                    wakeDictGrammar.Enabled = false;
                     dictGrammar.Enabled = false;
-                    interruptGrammar.Enabled = true; // Pure constrained barge-in grammar
+                    interruptGrammar.Enabled = true;
                     Console.WriteLine("MODE:SPEAKING");
                     Console.Out.Flush();
                 }
@@ -510,7 +497,6 @@ namespace SphereVoiceEngine {
                 }
             }
 
-            // Stdin EOF reached: Parent process has exited or pipe was closed!
             StopMusic();
             try { synth.SpeakAsyncCancelAll(); } catch { }
             try { sre.RecognizeAsyncStop(); } catch { }
@@ -542,8 +528,6 @@ namespace SphereVoiceEngine {
 
             lock (modeLock) {
                 if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
-                    // Fast barge-in interruption: SAPI InterruptGrammar is tightly constrained to ~30 words.
-                    // Hypothesized match stops music and speech in <80ms without waiting for music silence!
                     bool isHypStop = BargeInStopRegex.IsMatch(hypText);
                     bool isHypExit = IsExitPhrase(hypText) || BargeInExitRegex.IsMatch(hypText);
                     string hypWakeQuery = null;
@@ -585,17 +569,14 @@ namespace SphereVoiceEngine {
                 if (currentMode == ServiceMode.Listening) {
                     speechHeardInListening = true;
 
-                    // Filter out jittery low-confidence sub-word noises
                     if (e.Result.Confidence < 0.18f && hypText.Length < 7) return;
 
-                    // Clean leading wake words if caught
                     string lowerHyp = hypText.ToLowerInvariant();
                     if (lowerHyp.StartsWith("hey sphere ")) hypText = hypText.Substring(11).Trim();
                     else if (lowerHyp.StartsWith("sphere ")) hypText = hypText.Substring(7).Trim();
                     else if (lowerHyp.StartsWith("her sphere ")) hypText = hypText.Substring(11).Trim();
                     else if (lowerHyp.StartsWith("hi sphere ")) hypText = hypText.Substring(10).Trim();
 
-                    // Phonetic corrections for common SAPI acoustic confusions
                     hypText = Regex.Replace(hypText, @"\bcomputer mouth\b", "computer mouse", RegexOptions.IgnoreCase);
                     hypText = Regex.Replace(hypText, @"\ba mouth look\b", "a mouse look", RegexOptions.IgnoreCase);
                     hypText = Regex.Replace(hypText, @"\bthe mouth look\b", "the mouse look", RegexOptions.IgnoreCase);
@@ -608,7 +589,6 @@ namespace SphereVoiceEngine {
                         Console.Out.Flush();
                     }
                 } else if (currentMode == ServiceMode.Standby) {
-                    // Instant wake-up on hypothesized wake phrase for zero-latency response!
                     string remaining;
                     if (IsWakePhrase(hypText, out remaining)) {
                         Console.WriteLine("WAKE");
@@ -632,7 +612,6 @@ namespace SphereVoiceEngine {
 
             lock (modeLock) {
                 if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
-                    // Threshold 0.18f: mic picks up speakers during playback, constrained grammar guarantees safety
                     if (e.Result.Confidence < 0.18f) {
                         return;
                     }
@@ -642,7 +621,6 @@ namespace SphereVoiceEngine {
                     string wakeQuery = null;
                     bool isWake = BargeInWakeRegex.IsMatch(text) || IsWakePhrase(text, out wakeQuery);
 
-                    // Must match an explicit exit, stop, or wake command
                     if (!isExit && !isWake && !isStop) {
                         return;
                     }
@@ -679,19 +657,16 @@ namespace SphereVoiceEngine {
                 }
 
                 if (currentMode == ServiceMode.Standby) {
-                    // Lowered threshold to 0.15f: constrained wake choices already prevent false positives!
                     if (e.Result.Confidence < 0.15f) {
                         return;
                     }
 
-                    // Check for exit
                     if (IsExitPhrase(text)) {
                         Console.WriteLine("EXIT");
                         Console.Out.Flush();
                         return;
                     }
 
-                    // Check for direct play command in Standby (e.g. "play despacito", "play some music")
                     string lowerText = text.ToLowerInvariant().Trim();
                     if (lowerText.StartsWith("play ") || lowerText.StartsWith("play the song ") || lowerText.StartsWith("play song ")) {
                         Console.WriteLine("WAKE");
@@ -701,7 +676,6 @@ namespace SphereVoiceEngine {
                         return;
                     }
 
-                    // Check for wake word and possible immediate query
                     string query;
                     if (IsWakePhrase(text, out query)) {
                         if (IsExitPhrase(query)) {
@@ -723,14 +697,12 @@ namespace SphereVoiceEngine {
                 }
 
                 if (currentMode == ServiceMode.Listening) {
-                    // Check for exit
                     if (IsExitPhrase(text)) {
                         Console.WriteLine("EXIT");
                         Console.Out.Flush();
                         return;
                     }
 
-                    // Check for stop or cancel
                     if (BargeInStopRegex.IsMatch(text)) {
                         Console.WriteLine("TIMEOUT");
                         Console.Out.Flush();
@@ -738,7 +710,6 @@ namespace SphereVoiceEngine {
                         return;
                     }
 
-                    // If user repeated wake word while already listening, reset silence timer
                     string query;
                     if (IsWakePhrase(text, out query)) {
                         if (IsExitPhrase(query)) {
@@ -754,7 +725,6 @@ namespace SphereVoiceEngine {
                         }
                     }
 
-                    // Phonetic corrections
                     text = Regex.Replace(text, @"\bcomputer mouth\b", "computer mouse", RegexOptions.IgnoreCase);
                     text = Regex.Replace(text, @"\ba mouth look\b", "a mouse look", RegexOptions.IgnoreCase);
                     text = Regex.Replace(text, @"\bthe mouth look\b", "the mouse look", RegexOptions.IgnoreCase);
@@ -777,7 +747,6 @@ namespace SphereVoiceEngine {
                     string text = e.Result.Text.Trim();
                     string query;
                     if (IsWakePhrase(text, out query)) {
-                        // Rescued wake word from SAPI low confidence rejection
                         Console.WriteLine("WAKE");
                         if (!string.IsNullOrEmpty(query)) {
                             Console.WriteLine("FINAL:" + query);

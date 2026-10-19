@@ -14,7 +14,6 @@ typedef struct {
     int has_image;
 } SearchResult;
 
-
 int search_web_and_images(const char *query, SearchResult *out_result);
 
 typedef struct {
@@ -31,5 +30,4 @@ int search_music_track(const char *query, MusicTrack *out_track);
 #ifdef __cplusplus
 }
 #endif
-
-#endif 
+#endif

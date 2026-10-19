@@ -19,9 +19,9 @@
 #include <signal.h>
 #endif
 
-#define SAMPLES_PER_BUFFER 800 // 50ms at 16kHz
+#define SAMPLES_PER_BUFFER 800
 #define SAMPLE_RATE 16000
-#define MAX_RECORDED_SAMPLES (SAMPLE_RATE * 15) // up to 15 seconds query
+#define MAX_RECORDED_SAMPLES (SAMPLE_RATE * 15)
 
 #ifdef _WIN32
 static HWAVEIN hWaveIn = NULL;
@@ -227,8 +227,6 @@ static void *voice_reader_thread(void *lpParam) {
                         char precise_text[512] = {0};
                         int got_precise = 0;
 
-                        // If audio was captured, only transcribe with Google Neural STT if SAPI was not a music command
-                        // and we have at least 1.0s of actual audio
                         if (!sapi_is_music && strlen(sapi_text) < 16 && samples_count >= (int)(SAMPLE_RATE * 1.0f)) {
 #ifdef _WIN32
                             char temp_path[MAX_PATH];
@@ -365,14 +363,12 @@ int audio_init(void) {
 #ifdef _WIN32
     InitializeCriticalSection(&audio_cs);
 
-    // Verify or compile sphere_voice_service.exe
     if (_access("sphere_voice_service.exe", 0) != 0) {
         system("C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /optimize+ "
                "/reference:C:\\Windows\\Microsoft.NET\\assembly\\GAC_MSIL\\System.Speech\\v4.0_4.0.0.0__31bf3856ad364e35\\System.Speech.dll "
                "/out:sphere_voice_service.exe sphere_voice_service.cs >nul 2>&1");
     }
 
-    // 1. Initialize high-speed low-latency continuous PCM mic capture via winmm
     WAVEFORMATEX pFormat;
     pFormat.wFormatTag = WAVE_FORMAT_PCM;
     pFormat.nChannels = 1;
@@ -396,7 +392,6 @@ int audio_init(void) {
         hWaveIn = NULL;
     }
 
-    // 2. Initialize voice service child process with pipes
     SECURITY_ATTRIBUTES saAttr;
     saAttr.nLength = sizeof(SECURITY_ATTRIBUTES);
     saAttr.bInheritHandle = TRUE;
@@ -448,7 +443,6 @@ int audio_init(void) {
     hProcess = pi.hProcess;
     CloseHandle(pi.hThread);
 
-    // Assign to Win32 Job Object with KILL_ON_JOB_CLOSE: guarantees instant OS kill when parent terminates
     HANDLE hJob = CreateJobObject(NULL, NULL);
     if (hJob) {
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli;
@@ -460,10 +454,8 @@ int audio_init(void) {
 
     service_running = 1;
 
-    // Start reader thread
     hReaderThread = CreateThread(NULL, 0, voice_reader_thread, NULL, 0, NULL);
 
-    // Set initial mode to standby
     audio_set_standby_mode();
     return 1;
 #else
@@ -475,7 +467,6 @@ int audio_init(void) {
 
     pid_t pid = fork();
     if (pid == 0) {
-        // Child process
         close(in_pipe[1]);
         close(out_pipe[0]);
         dup2(in_pipe[0], STDIN_FILENO);
@@ -491,7 +482,6 @@ int audio_init(void) {
         execlp("python", "python", "sphere_voice_service.py", parent_pid_str, (char *)NULL);
         _exit(1);
     } else if (pid > 0) {
-        // Parent process
         close(in_pipe[0]);
         close(out_pipe[1]);
         posix_child_in = in_pipe[1];
@@ -620,7 +610,7 @@ static void clean_for_speech(const char *src, char *dst, size_t max_len) {
         if (in_paren > 0) {
             paren_chars++;
             if (paren_chars > 45) {
-                in_paren = 0; // Auto-recover from unclosed parenthesis
+                in_paren = 0;
             } else {
                 continue;
             }
@@ -629,7 +619,7 @@ static void clean_for_speech(const char *src, char *dst, size_t max_len) {
 
         if (c == '*' || c == '#' || c == '`' || c == '_' || c == '"' || c == '\\') continue;
         if (c == '\n' || c == '\r' || c == '\t') c = ' ';
-        if (c == ' ' && d > 0 && dst[d - 1] == ' ') continue; // collapse spaces
+        if (c == ' ' && d > 0 && dst[d - 1] == ' ') continue;
         dst[d++] = c;
     }
     dst[d] = '\0';
@@ -647,7 +637,6 @@ void audio_speak(const char *text) {
     char clean_text[4096];
     clean_for_speech(text, clean_text, sizeof(clean_text));
 
-    // If cleaning yielded too few characters, use raw text with sanitized whitespace
     if (strlen(clean_text) < 3) {
         size_t d = 0;
         for (size_t s = 0; text[s] && d + 1 < sizeof(clean_text); s++) {

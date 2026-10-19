@@ -151,7 +151,7 @@ static void handle_exit(void) {
     renderer_set_status("Exiting SphereAI...");
     renderer_set_subtitle("Sphere: see you later, bye");
     audio_speak_exit("see you later, bye");
-    int wait_count = 80; // up to 4s for complete speech
+    int wait_count = 80;
     while (audio_is_speaking() && --wait_count > 0) {
         platform_sleep(50);
     }
@@ -247,13 +247,11 @@ static void handle_user_query(const char *raw_query) {
     char lower_query[512];
     to_lower_str(query, lower_query, sizeof(lower_query));
 
-    // Exit check
     if (is_exit_command(lower_query)) {
         handle_exit();
         return;
     }
 
-    // Stop check
     if (is_stop_command(lower_query)) {
         audio_stop_speech();
         audio_stop_music();
@@ -264,7 +262,6 @@ static void handle_user_query(const char *raw_query) {
         return;
     }
 
-    // Music playback check: search and stream whole songs dynamically
     if (agent_has_music_intent(query)) {
         renderer_set_state(STATE_THINKING);
         renderer_set_status("Searching for full song...");
@@ -316,7 +313,6 @@ static void handle_user_query(const char *raw_query) {
                 platform_sleep(20);
             }
 
-            // Transition to Dynamic Music Visualizer State!
             renderer_set_state(STATE_MUSIC);
             char status_music[256];
             snprintf(status_music, sizeof(status_music), "Playing Full Song | %s - %s", track.track_name, track.artist_name);
@@ -328,7 +324,6 @@ static void handle_user_query(const char *raw_query) {
 
             audio_play_music(track.preview_url);
 
-            // Music visualizer loop: ball pulses, ripples, and repels with the music beats
             while (app_running && audio_is_music_playing()) {
                 if (audio_check_exit_detected()) {
                     handle_exit();
@@ -405,9 +400,6 @@ static void handle_user_query(const char *raw_query) {
         }
     }
 
-
-
-    // Transition to Thinking / Web Searching state (Cyan ball revolving fast)
     renderer_set_state(STATE_THINKING);
     char think_status[256];
     snprintf(think_status, sizeof(think_status), "Searching & thinking: \"%s\"...", query);
@@ -419,27 +411,22 @@ static void handle_user_query(const char *raw_query) {
 
     agent_process_query(query, response, sizeof(response), &is_happy);
 
-    // Guarantee a rich, non-empty spoken response for every query
     if (strlen(response) == 0) {
         snprintf(response, sizeof(response),
                  "I researched \"%s\", but could not retrieve a clear factual summary. Feel free to ask me more specific questions or explore another topic.", query);
     }
 
-    // If happy sentiment or praise, morph to happy face!
     if (is_happy) {
         renderer_set_status("Feeling joyful! Morphing happy face...");
         renderer_trigger_happy();
     }
 
-    // Transition to Speaking state (Green ball revolving while answering)
     renderer_set_state(STATE_SPEAKING);
     renderer_set_status("Speaking response... (Say \"Hey Sphere\" or \"stop\" to interrupt)");
     renderer_set_subtitle(response);
 
-    // Speak aloud with voice synthesis (words stream onto screen one by one in sync)
     audio_speak(response);
 
-    // Wait until speech is finished or interrupted by user voice / key
     while (app_running) {
         if (audio_check_exit_detected()) {
             handle_exit();
@@ -448,9 +435,7 @@ static void handle_user_query(const char *raw_query) {
 
         int wake_retrigger = 0;
         if (audio_check_interrupted(&wake_retrigger)) {
-            // Speech was interrupted!
             if (wake_retrigger) {
-                // User said "Hey Sphere" while speaking -> Immediately switch to listening!
                 renderer_set_state(STATE_LISTENING);
                 renderer_set_status("Awake! Listening to your voice... (Speak now)");
                 renderer_set_subtitle("Listening...");
@@ -466,18 +451,17 @@ static void handle_user_query(const char *raw_query) {
 
         if (_kbhit()) {
             int c = _getch();
-            if (c == 27 || c == 'q' || c == 'Q') { // Esc or q
+            if (c == 27 || c == 'q' || c == 'Q') {
                 handle_exit();
                 return;
             }
-            // ANY key immediately interrupts speaking!
+
             audio_stop_speech();
             break;
         }
         platform_sleep(20);
     }
 
-    // After speaking finishes, return to standby mode
     audio_set_standby_mode();
     renderer_set_state(STATE_IDLE);
     renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
@@ -514,7 +498,6 @@ int main(void) {
 #endif
 
     if (is_pipe) {
-        // Piped stdin mode
         char line[512];
         while (fgets(line, sizeof(line), stdin)) {
             size_t l = strlen(line);
@@ -528,7 +511,6 @@ int main(void) {
             break;
         }
     } else {
-        // Welcome voice greeting (spoken once on launch)
         audio_speak("Sphere AI online. Say Hey Sphere to activate.");
         int start_in_listening = 0;
         while (app_running) {
@@ -569,21 +551,18 @@ int main(void) {
         int typed_len = 0;
 
         while (app_running) {
-            // Check for voice exit
             if (audio_check_exit_detected()) {
                 handle_exit();
                 break;
             }
 
-            // Keyboard check in IDLE state
             if (_kbhit()) {
                 int c = _getch();
-                if (c == 27) { // ESC exits
+                if (c == 27) {
                     handle_exit();
                     break;
                 }
                 if (c == ' ' || c == 10 || c == 13) {
-                    // Space or Enter wakes the sphere into listening!
                     typed_len = 0;
                     typed_buf[0] = '\0';
                     renderer_set_state(STATE_LISTENING);
@@ -591,7 +570,6 @@ int main(void) {
                     renderer_set_subtitle("Listening... (Type prompt and press Enter)");
                     audio_set_listening_mode();
                 } else if (c >= 32 && c <= 126) {
-                    // Any printable character wakes sphere and immediately buffers input
                     typed_len = 0;
                     typed_buf[typed_len++] = (char)c;
                     typed_buf[typed_len] = '\0';
@@ -604,9 +582,7 @@ int main(void) {
                 }
             }
 
-            // Check if awake or wake word triggered
             if (audio_check_wake_detected() || renderer_get_state() == STATE_LISTENING) {
-                // Wake detected!
                 if (renderer_get_state() != STATE_LISTENING) {
                     typed_len = 0;
                     typed_buf[0] = '\0';
@@ -616,32 +592,28 @@ int main(void) {
                     audio_set_listening_mode();
                 }
 
-                // Check if query was already caught in same breath by voice
                 if (typed_len == 0 && audio_get_final_speech(query_buf, sizeof(query_buf))) {
                     handle_user_query(query_buf);
                     continue;
                 }
 
-                // Active listening wait loop
                 while (app_running && renderer_get_state() == STATE_LISTENING) {
                     if (_kbhit()) {
                         int c = _getch();
-                        if (c == 27) { // ESC
+                        if (c == 27) {
                             if (typed_len > 0) {
-                                // Clear buffer
                                 typed_len = 0;
                                 typed_buf[0] = '\0';
                                 renderer_set_status("Awake! Listening... (Speak or type prompt)");
                                 renderer_set_subtitle("Listening... (Type prompt and press Enter)");
                             } else {
-                                // Return to standby
                                 renderer_set_state(STATE_IDLE);
                                 audio_set_standby_mode();
                                 renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
                                 renderer_set_subtitle("Say \"Hey Sphere\" or type to wake me up! (Or 'exit')");
                                 break;
                             }
-                        } else if (c == 10 || c == 13) { // Enter
+                        } else if (c == 10 || c == 13) {
                             if (typed_len > 0) {
                                 char submitted[512];
                                 snprintf(submitted, sizeof(submitted), "%s", typed_buf);
@@ -656,7 +628,7 @@ int main(void) {
                                 renderer_set_subtitle("Standby. Say \"Hey Sphere\" or type to wake me up.");
                                 break;
                             }
-                        } else if (c == 8 || c == 127) { // Backspace
+                        } else if (c == 8 || c == 127) {
                             if (typed_len > 0) {
                                 typed_buf[--typed_len] = '\0';
                                 if (typed_len > 0) {
@@ -669,7 +641,7 @@ int main(void) {
                                     renderer_set_subtitle("Listening... (Type prompt and press Enter)");
                                 }
                             }
-                        } else if (c >= 32 && c <= 126) { // Printable characters
+                        } else if (c >= 32 && c <= 126) {
                             if (typed_len + 1 < (int)sizeof(typed_buf)) {
                                 typed_buf[typed_len++] = (char)c;
                                 typed_buf[typed_len] = '\0';
@@ -686,7 +658,6 @@ int main(void) {
                         break;
                     }
 
-                    // Check if voice speech phrase was finalized (only if user is not typing)
                     if (typed_len == 0 && audio_get_final_speech(query_buf, sizeof(query_buf))) {
                         char heard[256];
                         snprintf(heard, sizeof(heard), "Heard: \"%s\"", query_buf);
@@ -695,7 +666,6 @@ int main(void) {
                         break;
                     }
 
-                    // Check for timeout (silence for >6s) - ONLY if user has not typed anything
                     if (typed_len == 0 && audio_check_timeout_detected()) {
                         renderer_set_state(STATE_IDLE);
                         renderer_set_status("Standby | Say \"Hey Sphere\" to activate");

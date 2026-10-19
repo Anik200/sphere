@@ -23,13 +23,13 @@
 typedef enum { STATE_LISTENING, STATE_SPEAKING, STATE_HAPPY } AgentState;
 
 typedef struct {
-    float sx, sy, sz; // Sphere base coordinates
-    float tx, ty, tz; // Target coordinates (for morphing)
+    float sx, sy, sz;
+    float tx, ty, tz;
 } Particle;
 
 Particle particles[NUM_PARTICLES];
 unsigned char braille_grid[TERM_H][TERM_W];
-char frame_buffer[TERM_H * (TERM_W * 3 + 2) + 64]; // Single-write frame buffer
+char frame_buffer[TERM_H * (TERM_W * 3 + 2) + 64];
 
 static const unsigned char pixel_map[4][2] = {
     {0x01, 0x08},
@@ -40,9 +40,8 @@ static const unsigned char pixel_map[4][2] = {
 
 void setup_windows_console(void) {
 #ifdef _WIN32
-    // Force UTF-8 output so Unicode Braille renders properly
     SetConsoleOutputCP(65001);
-    // Enable ANSI escape codes in Windows Terminal / CMD / PowerShell
+
     HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
     DWORD dwMode = 0;
     GetConsoleMode(hOut, &dwMode);
@@ -61,17 +60,17 @@ void init_particles(void) {
         particles[i].sy = y;
         particles[i].sz = sinf(theta) * radius;
 
-        if (i < 80) { // Left eye
+        if (i < 80) {
             float a = (i / 80.0f) * 2.0f * (float)M_PI;
             particles[i].tx = -0.35f + cosf(a) * 0.12f;
             particles[i].ty = -0.3f + sinf(a) * 0.12f;
             particles[i].tz = 0.0f;
-        } else if (i < 160) { // Right eye
+        } else if (i < 160) {
             float a = ((i - 80) / 80.0f) * 2.0f * (float)M_PI;
             particles[i].tx = 0.35f + cosf(a) * 0.12f;
             particles[i].ty = -0.3f + sinf(a) * 0.12f;
             particles[i].tz = 0.0f;
-        } else { // Smile arc
+        } else {
             float t = (i - 160) / (float)(NUM_PARTICLES - 160);
             float a = (float)M_PI * 0.15f + t * (float)M_PI * 0.7f;
             particles[i].tx = cosf(a) * 0.65f;
@@ -106,7 +105,6 @@ void render_frame(AgentState state, float angle, float voice_amp, float morph) {
         set_subpixel(px, py);
     }
 
-    // Write entire frame to a single buffer to eliminate Windows console flicker
     int pos = sprintf(frame_buffer, "\033[H%s",
                       (state == STATE_LISTENING) ? "\033[38;5;135m" : "\033[38;5;46m");
 
@@ -131,7 +129,7 @@ void render_frame(AgentState state, float angle, float voice_amp, float morph) {
 int main(void) {
     setup_windows_console();
     init_particles();
-    printf("\033[2J\033[?25l"); // Clear screen and hide cursor
+    printf("\033[2J\033[?25l");
 
     float angle = 0.0f, morph = 0.0f;
     for (int frame = 0; frame < 600; frame++) {
@@ -146,12 +144,12 @@ int main(void) {
 
         render_frame(state, angle, amp, morph);
 #ifdef _WIN32
-        Sleep(16); // ~60 FPS on Windows
+        Sleep(16);
 #else
         usleep(16666);
 #endif
     }
 
-    printf("\033[?25h"); // Restore cursor
+    printf("\033[?25h");
     return 0;
 }
