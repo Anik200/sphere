@@ -3,10 +3,15 @@ import speech_recognition as sr
 
 def transcribe_wav(wav_path):
     r = sr.Recognizer()
+    r.dynamic_energy_threshold = True
+    r.energy_threshold = 200
     try:
         with sr.AudioFile(wav_path) as source:
             audio = r.record(source)
-        text = r.recognize_google(audio)
+        try:
+            text = r.recognize_google(audio, language="en-US")
+        except Exception:
+            text = r.recognize_google(audio)
         return text.strip()
     except Exception:
         return ""

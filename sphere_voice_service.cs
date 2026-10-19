@@ -80,6 +80,17 @@ namespace SphereVoiceEngine {
             @"^(hey\s+sphere\s+|sphere\s+)?(exit|quit|close\s+app|close\s+the\s+app|shut\s+down|shutdown|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        static void SaveAudioIfAvailable(RecognitionResult result) {
+            if (result == null || result.Audio == null) return;
+            try {
+                string tempPath = Path.GetTempPath();
+                string outPath = Path.Combine(tempPath, "sphere_sre_audio.wav");
+                using (FileStream fs = new FileStream(outPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite)) {
+                    result.Audio.WriteToWaveStream(fs);
+                }
+            } catch { }
+        }
+
         static bool IsExitPhrase(string text) {
             if (string.IsNullOrEmpty(text)) return false;
             string clean = text.Trim().Trim('.', '?', '!', ',', ' ', '"', '\'');
@@ -153,8 +164,8 @@ namespace SphereVoiceEngine {
 
                 sre.SetInputToDefaultAudioDevice();
                 try {
-                    sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(150);
-                    sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(250);
+                    sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(850);
+                    sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(1000);
                 } catch { }
 
                 Choices wakeChoices = new Choices(new string[] {
@@ -249,15 +260,41 @@ namespace SphereVoiceEngine {
             }
         }
 
+        static string StripWakePrefix(string text) {
+            if (string.IsNullOrEmpty(text)) return text;
+            string clean = text.Trim();
+            string lower = clean.ToLowerInvariant();
+            string[] prefixes = new string[] {
+                "hey, sphere", "hey sphere", "hi, sphere", "hi sphere", "hello, sphere", "hello sphere",
+                "ok, sphere", "ok sphere", "okay, sphere", "okay sphere", "yo, sphere", "yo sphere",
+                "hey, spear", "hey spear", "hi, spear", "hi spear", "hello, spear", "hello spear",
+                "wake up sphere", "wake up", "her sphere", "here sphere", "hear sphere",
+                "the sphere", "a sphere", "sphere", "spear"
+            };
+            foreach (string p in prefixes) {
+                if (lower.StartsWith(p)) {
+                    string rem = clean.Substring(p.Length).Trim();
+                    while (rem.Length > 0 && (rem[0] == ',' || rem[0] == ':' || rem[0] == '.' || rem[0] == '!' || rem[0] == '?' || rem[0] == ' ' || rem[0] == '-' || rem[0] == '"' || rem[0] == '\'')) {
+                        rem = rem.Substring(1).Trim();
+                    }
+                    if (rem.Length > 0) return rem;
+                }
+            }
+            return clean;
+        }
+
         static bool IsWakePhrase(string text, out string remainingQuery) {
             remainingQuery = "";
             if (string.IsNullOrEmpty(text)) return false;
             string lower = text.ToLowerInvariant().Trim();
 
             string[] sphereKeywords = new string[] {
-                "hey sphere play", "sphere play", "hey sphere", "hi sphere", "hello sphere",
-                "ok sphere", "okay sphere", "yo sphere", "her sphere", "here sphere", "hear sphere",
-                "hey spear", "hi spear", "hello spear", "ok spear", "okay spear", "spear",
+                "hey, sphere play", "hey sphere play", "sphere play",
+                "hey, sphere", "hey sphere", "hi, sphere", "hi sphere", "hello, sphere", "hello sphere",
+                "ok, sphere", "ok sphere", "okay, sphere", "okay sphere", "yo, sphere", "yo sphere",
+                "her sphere", "here sphere", "hear sphere",
+                "hey, spear", "hey spear", "hi, spear", "hi spear", "hello, spear", "hello spear",
+                "ok spear", "okay spear", "spear",
                 "hey fear", "hi fear", "hello fear", "hey spare", "the sphere", "a sphere",
                 "hay sphere", "ay sphere", "wake up sphere", "wake up", "sphere"
             };
@@ -594,11 +631,7 @@ namespace SphereVoiceEngine {
 
                     if (e.Result.Confidence < 0.18f && hypText.Length < 7) return;
 
-                    string lowerHyp = hypText.ToLowerInvariant();
-                    if (lowerHyp.StartsWith("hey sphere ")) hypText = hypText.Substring(11).Trim();
-                    else if (lowerHyp.StartsWith("sphere ")) hypText = hypText.Substring(7).Trim();
-                    else if (lowerHyp.StartsWith("her sphere ")) hypText = hypText.Substring(11).Trim();
-                    else if (lowerHyp.StartsWith("hi sphere ")) hypText = hypText.Substring(10).Trim();
+                    hypText = StripWakePrefix(hypText);
 
                     hypText = Regex.Replace(hypText, @"\bcomputer mouth\b", "computer mouse", RegexOptions.IgnoreCase);
                     hypText = Regex.Replace(hypText, @"\ba mouth look\b", "a mouse look", RegexOptions.IgnoreCase);
@@ -615,13 +648,8 @@ namespace SphereVoiceEngine {
                     string remaining;
                     if (IsWakePhrase(hypText, out remaining)) {
                         Console.WriteLine("WAKE");
-                        if (!string.IsNullOrEmpty(remaining) && remaining.Length > 2) {
-                            Console.WriteLine("FINAL:" + remaining);
-                            SetMode(ServiceMode.Standby);
-                        } else {
-                            SetMode(ServiceMode.Listening);
-                        }
                         Console.Out.Flush();
+                        SetMode(ServiceMode.Listening);
                         return;
                     }
                     return;
@@ -680,6 +708,8 @@ namespace SphereVoiceEngine {
                         return;
                     }
 
+                    SaveAudioIfAvailable(e.Result);
+
                     if (IsExitPhrase(text)) {
                         Console.WriteLine("EXIT");
                         Console.Out.Flush();
@@ -716,6 +746,7 @@ namespace SphereVoiceEngine {
                 }
 
                 if (currentMode == ServiceMode.Listening) {
+                    SaveAudioIfAvailable(e.Result);
                     if (IsExitPhrase(text)) {
                         Console.WriteLine("EXIT");
                         Console.Out.Flush();
@@ -749,6 +780,7 @@ namespace SphereVoiceEngine {
                     text = Regex.Replace(text, @"\bthe mouth look\b", "the mouse look", RegexOptions.IgnoreCase);
                     text = Regex.Replace(text, @"\bwhat a mouth\b", "what a mouse", RegexOptions.IgnoreCase);
                     text = Regex.Replace(text, @"\bwhat does a mouth\b", "what does a mouse", RegexOptions.IgnoreCase);
+                    text = StripWakePrefix(text);
 
                     if (!string.IsNullOrEmpty(text)) {
                         Console.WriteLine("FINAL:" + text);
@@ -817,6 +849,18 @@ namespace SphereVoiceEngine {
                             return;
                         }
                     }
+                    return;
+                }
+
+                if (currentMode == ServiceMode.Listening) {
+                    SaveAudioIfAvailable(e.Result);
+                    string altText = (e.Result != null && !string.IsNullOrEmpty(e.Result.Text)) ? e.Result.Text : "";
+                    if (e.Result != null && e.Result.Alternates != null && e.Result.Alternates.Count > 0) {
+                        altText = e.Result.Alternates[0].Text ?? altText;
+                    }
+                    Console.WriteLine("FINAL:" + altText);
+                    Console.Out.Flush();
+                    SetMode(ServiceMode.Standby);
                     return;
                 }
 

@@ -69,6 +69,29 @@ static short recorded_samples[MAX_RECORDED_SAMPLES];
 static volatile int num_recorded_samples = 0;
 static volatile int is_recording_query = 0;
 
+#define PRE_ROLL_SAMPLES (SAMPLE_RATE * 2)
+static short preroll_buffer[PRE_ROLL_SAMPLES];
+static int preroll_head = 0;
+static int preroll_count = 0;
+
+static void preroll_push(short sample) {
+    preroll_buffer[preroll_head] = sample;
+    preroll_head = (preroll_head + 1) % PRE_ROLL_SAMPLES;
+    if (preroll_count < PRE_ROLL_SAMPLES) preroll_count++;
+}
+
+static int preroll_copy_to(short *dest, int max_samples, int requested_samples) {
+    if (requested_samples > preroll_count) requested_samples = preroll_count;
+    if (requested_samples > max_samples) requested_samples = max_samples;
+    if (requested_samples <= 0) return 0;
+
+    int start = (preroll_head - requested_samples + PRE_ROLL_SAMPLES) % PRE_ROLL_SAMPLES;
+    for (int i = 0; i < requested_samples; i++) {
+        dest[i] = preroll_buffer[(start + i) % PRE_ROLL_SAMPLES];
+    }
+    return requested_samples;
+}
+
 static char final_speech_buf[512] = {0};
 static volatile int final_speech_ready = 0;
 
@@ -76,8 +99,20 @@ static char spoken_words_stream[4096] = {0};
 static volatile int service_running = 0;
 
 static void write_wav_file(const char *filename, const short *pcm_data, int num_samples) {
+    if (!filename || !pcm_data || num_samples <= 0) return;
     FILE *f = fopen(filename, "wb");
     if (!f) return;
+
+    short max_v = 0;
+    for (int i = 0; i < num_samples; i++) {
+        short abs_v = (pcm_data[i] < 0) ? (short)(-pcm_data[i]) : pcm_data[i];
+        if (abs_v > max_v) max_v = abs_v;
+    }
+    float gain = 1.0f;
+    if (max_v > 80 && max_v < 18000) {
+        gain = 24000.0f / (float)max_v;
+        if (gain > 8.0f) gain = 8.0f;
+    }
 
     int byte_rate = SAMPLE_RATE * 1 * 2;
     int data_chunk_size = num_samples * 2;
@@ -105,7 +140,25 @@ static void write_wav_file(const char *filename, const short *pcm_data, int num_
 
     fwrite("data", 1, 4, f);
     fwrite(&data_chunk_size, 4, 1, f);
-    fwrite(pcm_data, 2, num_samples, f);
+
+    if (gain > 1.05f) {
+        short gain_buf[1024];
+        int idx = 0;
+        while (idx < num_samples) {
+            int chunk = num_samples - idx;
+            if (chunk > 1024) chunk = 1024;
+            for (int k = 0; k < chunk; k++) {
+                int s = (int)(pcm_data[idx + k] * gain);
+                if (s > 32767) s = 32767;
+                else if (s < -32768) s = -32768;
+                gain_buf[k] = (short)s;
+            }
+            fwrite(gain_buf, 2, chunk, f);
+            idx += chunk;
+        }
+    } else {
+        fwrite(pcm_data, 2, num_samples, f);
+    }
     fclose(f);
 }
 
@@ -124,6 +177,7 @@ static void CALLBACK waveInProc(HWAVEIN hwi, UINT uMsg, DWORD_PTR dwInstance, DW
             long long sum = 0;
             for (int i = 0; i < count; i++) {
                 sum += (long long)samples[i] * samples[i];
+                preroll_push(samples[i]);
                 if (is_recording_query && num_recorded_samples < MAX_RECORDED_SAMPLES) {
                     recorded_samples[num_recorded_samples++] = samples[i];
                 }
@@ -159,6 +213,80 @@ static void audio_send_cmd(const char *cmd) {
     ssize_t ret = write(posix_child_in, buf, len);
     (void)ret;
 #endif
+}
+
+static void strip_wake_prefix(char *text) {
+    if (!text || strlen(text) == 0) return;
+
+    char *start = text;
+    while (*start && (isspace((unsigned char)*start) || *start == '"' || *start == '\'' || *start == ',' || *start == '.')) {
+        start++;
+    }
+    if (start != text) {
+        memmove(text, start, strlen(start) + 1);
+    }
+    if (strlen(text) == 0) return;
+
+    char lower[512];
+    size_t len = strlen(text);
+    if (len >= sizeof(lower)) len = sizeof(lower) - 1;
+    for (size_t i = 0; i < len; i++) {
+        lower[i] = (char)tolower((unsigned char)text[i]);
+    }
+    lower[len] = '\0';
+
+    const char *greetings[] = {
+        "hey", "hi", "hello", "ok", "okay", "yo", "ay", "hay", "her", "here", "hear", "wake up", "the", "a"
+    };
+    const char *sphere_names[] = {
+        "sphere", "spear", "fear", "spare", "sphear"
+    };
+
+    const char *p = lower;
+    for (size_t g = 0; g < sizeof(greetings)/sizeof(greetings[0]); g++) {
+        size_t glen = strlen(greetings[g]);
+        if (strncmp(p, greetings[g], glen) == 0) {
+            char next = p[glen];
+            if (next == ' ' || next == ',' || next == '.' || next == '!' || next == '?' || next == '-' || next == '\0') {
+                p += glen;
+                while (*p && (*p == ' ' || *p == ',' || *p == '.' || *p == '!' || *p == '?' || *p == '-' || *p == ':')) {
+                    p++;
+                }
+                break;
+            }
+        }
+    }
+
+    int matched_sphere = 0;
+    for (size_t s = 0; s < sizeof(sphere_names)/sizeof(sphere_names[0]); s++) {
+        size_t slen = strlen(sphere_names[s]);
+        if (strncmp(p, sphere_names[s], slen) == 0) {
+            char next = p[slen];
+            if (next == ' ' || next == ',' || next == '.' || next == '!' || next == '?' || next == '-' || next == ':' || next == '\0') {
+                p += slen;
+                while (*p && (*p == ' ' || *p == ',' || *p == '.' || *p == '!' || *p == '?' || *p == '-' || *p == ':' || *p == '"' || *p == '\'')) {
+                    p++;
+                }
+                matched_sphere = 1;
+                break;
+            }
+        }
+    }
+
+    if (matched_sphere) {
+        if (strncmp(p, "please ", 7) == 0) p += 7;
+        while (*p && isspace((unsigned char)*p)) p++;
+
+        size_t offset = (size_t)(p - lower);
+        const char *remaining = text + offset;
+        while (*remaining && (*remaining == ' ' || *remaining == ',' || *remaining == '.' || *remaining == ':' || *remaining == '!' || *remaining == '?' || *remaining == '"' || *remaining == '\'')) {
+            remaining++;
+        }
+
+        if (strlen(remaining) > 0) {
+            memmove(text, remaining, strlen(remaining) + 1);
+        }
+    }
 }
 
 #ifdef _WIN32
@@ -200,15 +328,18 @@ static void *voice_reader_thread(void *lpParam) {
                         }
                     } else if (strncmp(line_buf, "HYP:", 4) == 0) {
                         const char *hyp = line_buf + 4;
+                        char clean_hyp[512];
+                        snprintf(clean_hyp, sizeof(clean_hyp), "%s", hyp);
+                        strip_wake_prefix(clean_hyp);
                         char display[600];
-                        snprintf(display, sizeof(display), "Listening: \"%s...\"", hyp);
+                        snprintf(display, sizeof(display), "Listening: \"%s...\"", clean_hyp);
                         renderer_set_subtitle(display);
-                        renderer_set_input_buffer(hyp);
+                        renderer_set_input_buffer(clean_hyp);
                     } else if (strcmp(line_buf, "WAKE") == 0) {
                         wake_detected = 1;
                         audio_lock();
+                        num_recorded_samples = preroll_copy_to(recorded_samples, MAX_RECORDED_SAMPLES, (int)(SAMPLE_RATE * 1.0f));
                         is_recording_query = 1;
-                        num_recorded_samples = 0;
                         audio_unlock();
                     } else if (strncmp(line_buf, "FINAL:", 6) == 0) {
                         audio_lock();
@@ -219,28 +350,46 @@ static void *voice_reader_thread(void *lpParam) {
                         const char *sapi_text = line_buf + 6;
                         while (*sapi_text && isspace((unsigned char)*sapi_text)) sapi_text++;
 
-                        int sapi_is_music = (strncasecmp(sapi_text, "play", 4) == 0 ||
-                                             strncasecmp(sapi_text, "song", 4) == 0 ||
-                                             strncasecmp(sapi_text, "listen", 6) == 0 ||
-                                             strncasecmp(sapi_text, "put on", 6) == 0);
-
                         char precise_text[512] = {0};
                         int got_precise = 0;
 
-                        if (!sapi_is_music && strlen(sapi_text) < 16 && samples_count >= (int)(SAMPLE_RATE * 1.0f)) {
+                        char temp_path[MAX_PATH];
 #ifdef _WIN32
-                            char temp_path[MAX_PATH];
-                            GetTempPathA(MAX_PATH, temp_path);
-                            char wav_file[MAX_PATH];
-                            snprintf(wav_file, sizeof(wav_file), "%ssphere_query.wav", temp_path);
-                            char res_file[MAX_PATH];
-                            snprintf(res_file, sizeof(res_file), "%ssphere_stt_res.txt", temp_path);
-                            DeleteFileA(res_file);
+                        GetTempPathA(MAX_PATH, temp_path);
+#else
+                        const char *env_tmp = getenv("TMPDIR");
+                        if (!env_tmp) env_tmp = "/tmp";
+                        snprintf(temp_path, sizeof(temp_path), "%s/", env_tmp);
+#endif
+                        char wav_file[MAX_PATH];
+                        snprintf(wav_file, sizeof(wav_file), "%ssphere_query.wav", temp_path);
+                        char sre_wav_file[MAX_PATH];
+                        snprintf(sre_wav_file, sizeof(sre_wav_file), "%ssphere_sre_audio.wav", temp_path);
+                        char res_file[MAX_PATH];
+                        snprintf(res_file, sizeof(res_file), "%ssphere_stt_res.txt", temp_path);
 
+                        const char *target_wav = NULL;
+
+                        if (samples_count >= (int)(SAMPLE_RATE * 0.35f)) {
                             write_wav_file(wav_file, recorded_samples, samples_count);
+                            target_wav = wav_file;
+                        } else {
+                            FILE *fsre = fopen(sre_wav_file, "rb");
+                            if (fsre) {
+                                fseek(fsre, 0, SEEK_END);
+                                long sz = ftell(fsre);
+                                fclose(fsre);
+                                if (sz > 2000) {
+                                    target_wav = sre_wav_file;
+                                }
+                            }
+                        }
 
+                        if (target_wav) {
+#ifdef _WIN32
+                            DeleteFileA(res_file);
                             char cmd[MAX_PATH * 3];
-                            snprintf(cmd, sizeof(cmd), "python transcribe.py \"%s\" \"%s\"", wav_file, res_file);
+                            snprintf(cmd, sizeof(cmd), "python transcribe.py \"%s\" \"%s\"", target_wav, res_file);
 
                             STARTUPINFOA si;
                             PROCESS_INFORMATION pi;
@@ -250,26 +399,10 @@ static void *voice_reader_thread(void *lpParam) {
                             si.wShowWindow = SW_HIDE;
 
                             if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-                                WaitForSingleObject(pi.hProcess, 2500);
+                                WaitForSingleObject(pi.hProcess, 6000);
                                 CloseHandle(pi.hProcess);
                                 CloseHandle(pi.hThread);
                             }
-#else
-                            const char *temp_path = getenv("TMPDIR");
-                            if (!temp_path) temp_path = "/tmp";
-                            char wav_file[512];
-                            snprintf(wav_file, sizeof(wav_file), "%s/sphere_query_%d.wav", temp_path, (int)getpid());
-                            char res_file[512];
-                            snprintf(res_file, sizeof(res_file), "%s/sphere_stt_res_%d.txt", temp_path, (int)getpid());
-                            unlink(res_file);
-
-                            write_wav_file(wav_file, recorded_samples, samples_count);
-
-                            char cmd[1024];
-                            snprintf(cmd, sizeof(cmd), "python3 transcribe.py \"%s\" \"%s\" 2>/dev/null || python transcribe.py \"%s\" \"%s\" 2>/dev/null", wav_file, res_file, wav_file, res_file);
-                            int ret = system(cmd);
-                            (void)ret;
-#endif
 
                             FILE *f = fopen(res_file, "r");
                             if (f) {
@@ -281,24 +414,43 @@ static void *voice_reader_thread(void *lpParam) {
                                     if (strlen(precise_text) > 0) got_precise = 1;
                                 }
                                 fclose(f);
-#ifdef _WIN32
                                 DeleteFileA(res_file);
-#else
-                                unlink(res_file);
-#endif
                             }
-#ifdef _WIN32
                             DeleteFileA(wav_file);
+                            DeleteFileA(sre_wav_file);
 #else
+                            unlink(res_file);
+                            char cmd[1024];
+                            snprintf(cmd, sizeof(cmd), "python3 transcribe.py \"%s\" \"%s\" 2>/dev/null || python transcribe.py \"%s\" \"%s\" 2>/dev/null", target_wav, res_file, target_wav, res_file);
+                            int ret = system(cmd);
+                            (void)ret;
+
+                            FILE *f = fopen(res_file, "r");
+                            if (f) {
+                                if (fgets(precise_text, sizeof(precise_text), f)) {
+                                    size_t l = strlen(precise_text);
+                                    while (l > 0 && (precise_text[l-1] == '\n' || precise_text[l-1] == '\r' || precise_text[l-1] == ' ')) {
+                                        precise_text[--l] = '\0';
+                                    }
+                                    if (strlen(precise_text) > 0) got_precise = 1;
+                                }
+                                fclose(f);
+                                unlink(res_file);
+                            }
                             unlink(wav_file);
+                            unlink(sre_wav_file);
 #endif
                         }
 
                         audio_lock();
-                        if (sapi_is_music || strlen(sapi_text) >= 12 || !got_precise) {
-                            strncpy(final_speech_buf, sapi_text, sizeof(final_speech_buf) - 1);
+                        if (got_precise && strlen(precise_text) > 0) {
+                            strip_wake_prefix(precise_text);
+                            snprintf(final_speech_buf, sizeof(final_speech_buf), "%s", precise_text);
                         } else {
-                            strncpy(final_speech_buf, precise_text, sizeof(final_speech_buf) - 1);
+                            char clean_sapi[512];
+                            snprintf(clean_sapi, sizeof(clean_sapi), "%s", sapi_text);
+                            strip_wake_prefix(clean_sapi);
+                            snprintf(final_speech_buf, sizeof(final_speech_buf), "%s", clean_sapi);
                         }
                         final_speech_buf[sizeof(final_speech_buf) - 1] = '\0';
                         final_speech_ready = 1;
@@ -510,8 +662,10 @@ void audio_set_standby_mode(void) {
 
 void audio_set_listening_mode(void) {
     audio_lock();
-    num_recorded_samples = 0;
-    is_recording_query = 1;
+    if (!is_recording_query) {
+        num_recorded_samples = preroll_copy_to(recorded_samples, MAX_RECORDED_SAMPLES, (int)(SAMPLE_RATE * 0.5f));
+        is_recording_query = 1;
+    }
     audio_unlock();
     audio_send_cmd("CMD:LISTEN_QUERY");
 }

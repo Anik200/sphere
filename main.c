@@ -228,6 +228,80 @@ static int is_stop_command(const char *lower) {
             strcmp(lower, "enough") == 0);
 }
 
+static void strip_wake_prefix(char *text) {
+    if (!text || strlen(text) == 0) return;
+
+    char *start = text;
+    while (*start && (isspace((unsigned char)*start) || *start == '"' || *start == '\'' || *start == ',' || *start == '.')) {
+        start++;
+    }
+    if (start != text) {
+        memmove(text, start, strlen(start) + 1);
+    }
+    if (strlen(text) == 0) return;
+
+    char lower[512];
+    size_t len = strlen(text);
+    if (len >= sizeof(lower)) len = sizeof(lower) - 1;
+    for (size_t i = 0; i < len; i++) {
+        lower[i] = (char)tolower((unsigned char)text[i]);
+    }
+    lower[len] = '\0';
+
+    const char *greetings[] = {
+        "hey", "hi", "hello", "ok", "okay", "yo", "ay", "hay", "her", "here", "hear", "wake up", "the", "a"
+    };
+    const char *sphere_names[] = {
+        "sphere", "spear", "fear", "spare", "sphear"
+    };
+
+    const char *p = lower;
+    for (size_t g = 0; g < sizeof(greetings)/sizeof(greetings[0]); g++) {
+        size_t glen = strlen(greetings[g]);
+        if (strncmp(p, greetings[g], glen) == 0) {
+            char next = p[glen];
+            if (next == ' ' || next == ',' || next == '.' || next == '!' || next == '?' || next == '-' || next == '\0') {
+                p += glen;
+                while (*p && (*p == ' ' || *p == ',' || *p == '.' || *p == '!' || *p == '?' || *p == '-' || *p == ':')) {
+                    p++;
+                }
+                break;
+            }
+        }
+    }
+
+    int matched_sphere = 0;
+    for (size_t s = 0; s < sizeof(sphere_names)/sizeof(sphere_names[0]); s++) {
+        size_t slen = strlen(sphere_names[s]);
+        if (strncmp(p, sphere_names[s], slen) == 0) {
+            char next = p[slen];
+            if (next == ' ' || next == ',' || next == '.' || next == '!' || next == '?' || next == '-' || next == ':' || next == '\0') {
+                p += slen;
+                while (*p && (*p == ' ' || *p == ',' || *p == '.' || *p == '!' || *p == '?' || *p == '-' || *p == ':' || *p == '"' || *p == '\'')) {
+                    p++;
+                }
+                matched_sphere = 1;
+                break;
+            }
+        }
+    }
+
+    if (matched_sphere) {
+        if (strncmp(p, "please ", 7) == 0) p += 7;
+        while (*p && isspace((unsigned char)*p)) p++;
+
+        size_t offset = (size_t)(p - lower);
+        const char *remaining = text + offset;
+        while (*remaining && (*remaining == ' ' || *remaining == ',' || *remaining == '.' || *remaining == ':' || *remaining == '!' || *remaining == '?' || *remaining == '"' || *remaining == '\'')) {
+            remaining++;
+        }
+
+        if (strlen(remaining) > 0) {
+            memmove(text, remaining, strlen(remaining) + 1);
+        }
+    }
+}
+
 static void handle_user_query(const char *raw_query) {
     renderer_set_input_buffer("");
     if (!raw_query || strlen(raw_query) == 0) return;
@@ -245,6 +319,8 @@ static void handle_user_query(const char *raw_query) {
         query[--qlen] = '\0';
     }
     if (qlen == 0) return;
+
+    strip_wake_prefix(query);
 
     char lower_query[512];
     to_lower_str(query, lower_query, sizeof(lower_query));
