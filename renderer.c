@@ -31,11 +31,13 @@ static const unsigned char pixel_map[4][2] = {
 static volatile AgentState current_state = STATE_IDLE;
 static volatile AgentState previous_state = STATE_IDLE;
 static volatile float current_voice_amp = 0.0f;
+static AudioVisData current_vis = {0};
 static volatile float current_angle = 0.0f;
 static volatile float current_morph = 0.0f;
 static volatile BallExpression current_expression = EXPR_NONE;
 static volatile int expression_countdown = 0;
 static volatile float music_phase = 0.0f;
+static volatile float music_beat_wave = 0.0f;
 static volatile float ripple_phase = 0.0f;
 static char custom_color[32] = "";
 
@@ -368,6 +370,14 @@ void renderer_set_voice_amp(float amp) {
     if (amp < 0.0f) amp = 0.0f;
     if (amp > 1.0f) amp = 1.0f;
     current_voice_amp = amp;
+    current_vis.overall_amp = amp;
+}
+
+void renderer_set_vis_data(const AudioVisData *vis_data) {
+    if (vis_data) {
+        current_vis = *vis_data;
+        current_voice_amp = vis_data->overall_amp;
+    }
 }
 
 void renderer_set_status(const char *status_text) {
@@ -429,19 +439,25 @@ void renderer_render_frame(void) {
         current_morph += (0.0f - current_morph) * 0.12f;
     }
 
-    float sound_energy = voice_amp;
-    if (state == STATE_SPEAKING) {
-        float speak_pulse = 0.25f + 0.20f * sinf(current_angle * 3.2f) * cosf(current_angle * 1.6f);
-        if (sound_energy < speak_pulse) sound_energy = speak_pulse;
-    } else if (state == STATE_MUSIC) {
-        music_phase += 0.075f;
-        float beat = 0.32f + 0.22f * sinf(music_phase * 2.8f);
-        if (sound_energy < beat) sound_energy = beat;
+    float sound_energy = current_vis.overall_amp;
+    if (sound_energy < voice_amp) sound_energy = voice_amp;
+
+    if (state == STATE_MUSIC) {
+        sound_energy = current_vis.overall_amp;
+        music_phase += 0.045f + current_vis.bass * 0.12f + current_vis.mid * 0.08f;
+        music_beat_wave += 0.16f + current_vis.beat_pulse * 0.28f;
+    } else if (state == STATE_SPEAKING) {
+        if (sound_energy < 0.10f) {
+            float speak_pulse = 0.22f + 0.16f * sinf(current_angle * 3.2f) * cosf(current_angle * 1.6f);
+            if (sound_energy < speak_pulse) sound_energy = speak_pulse;
+        }
     }
 
     float rotation_speed = 0.035f;
     if (state == STATE_THINKING) {
         rotation_speed = 0.09f;
+    } else if (state == STATE_MUSIC) {
+        rotation_speed = 0.022f + current_vis.overall_amp * 0.060f + current_vis.beat_pulse * 0.040f;
     } else if (sound_energy > 0.03f) {
         rotation_speed += sound_energy * 0.22f;
     }
@@ -486,7 +502,8 @@ void renderer_render_frame(void) {
 
     float base_scale = (pix_h * 0.36f);
     if (state == STATE_MUSIC) {
-        base_scale *= (1.0f + sound_energy * 0.14f);
+        float music_pump = current_vis.bass * 0.30f + current_vis.beat_pulse * 0.25f + current_vis.overall_amp * 0.08f;
+        base_scale *= (1.0f + music_pump);
     } else if (sound_energy > 0.03f) {
         base_scale *= (1.0f + sound_energy * 0.16f);
     } else if (state == STATE_THINKING) {
@@ -507,16 +524,25 @@ void renderer_render_frame(void) {
         rz       = particles[i].sy * sin_pitch + rz * cos_pitch;
 
         if (state == STATE_MUSIC) {
-            float wave_lat = sinf(particles[i].sy * 6.0f + music_phase * 3.2f) * (sound_energy * 0.26f);
-            float theta = atan2f(particles[i].sz, particles[i].sx);
-            float wave_lon = cosf(theta * 3.0f - music_phase * 2.4f) * (sound_energy * 0.22f);
-            float radial_dist = particles[i].sx * particles[i].sx + particles[i].sz * particles[i].sz;
-            float wave_shock = sinf(radial_dist * 8.0f - music_phase * 3.5f) * (sound_energy * 0.18f);
-            float repel_band = sinf(particles[i].sy * 4.0f + music_phase * 2.0f) * (sound_energy * 0.15f);
+            float r_center = sqrtf(particles[i].sx * particles[i].sx + particles[i].sy * particles[i].sy + particles[i].sz * particles[i].sz);
 
-            float ripple = 1.0f + wave_lat + wave_lon + wave_shock + repel_band;
+            /* 1. Beat shockwave ring expanding outward from center on drum kicks */
+            float shock = sinf(r_center * 8.5f - music_beat_wave) * (current_vis.beat_pulse * 0.40f + current_vis.bass * 0.22f);
+
+            /* 2. Subwoofer vertical expansion / pole bounce on bass kicks */
+            float bass_lat = sinf(particles[i].sy * 5.0f - music_phase * 2.2f) * (current_vis.bass * 0.30f + current_vis.beat_pulse * 0.20f);
+
+            /* 3. Midrange melody & vocal equatorial twisting ripples */
+            float theta = atan2f(particles[i].sz, particles[i].sx);
+            float mid_lon = cosf(theta * 4.0f + music_phase * 2.0f) * (current_vis.mid * 0.26f);
+
+            /* 4. Treble sparkle / percussion vibration on hi-hats and cymbals */
+            float treble_twinkle = sinf(particles[i].sx * 14.0f + particles[i].sz * 14.0f + music_phase * 4.2f) * (current_vis.treble * 0.20f);
+
+            /* Combined dynamic ripple */
+            float ripple = 1.0f + shock + bass_lat + mid_lon + treble_twinkle;
             rx *= ripple;
-            ry *= (1.0f + wave_lat * 0.75f + sound_energy * 0.14f + repel_band);
+            ry *= (1.0f + shock * 0.85f + bass_lat * 1.15f + current_vis.bass * 0.18f);
             rz *= ripple;
         } else if (sound_energy > 0.02f) {
             float wave_lat = sinf(particles[i].sy * 7.0f - ripple_phase * 2.2f) * (sound_energy * 0.18f);
@@ -623,10 +649,16 @@ void renderer_render_frame(void) {
             meter_label = "AUDIO";
             break;
         case STATE_MUSIC:
-            badge_name = "MUSIC";
-            badge_color = COLOR_PINK;
-            badge_bg = "\033[48;5;53m";
-            meter_label = "AUDIO";
+            if (current_vis.beat_pulse > 0.38f) {
+                badge_name = "BEAT \xE2\x97\x86";
+                badge_color = COLOR_GOLD;
+                badge_bg = "\033[48;5;88m";
+            } else {
+                badge_name = "MUSIC";
+                badge_color = COLOR_PINK;
+                badge_bg = "\033[48;5;53m";
+            }
+            meter_label = (current_vis.beat_pulse > 0.38f) ? "BEAT \xE2\x97\x8F" : "BEAT";
             break;
         case STATE_IDLE:
         default:

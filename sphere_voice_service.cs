@@ -344,9 +344,8 @@ namespace SphereVoiceEngine {
 
                     if (musicMonitorThread == null || !musicMonitorThread.IsAlive) {
                         musicMonitorThread = new Thread(() => {
-                            float phase = 0f;
                             while (isMusicPlaying) {
-                                Thread.Sleep(60);
+                                Thread.Sleep(80);
                                 if (musicProcess != null) {
                                     if (musicProcess.HasExited) {
                                         isMusicPlaying = false;
@@ -355,11 +354,6 @@ namespace SphereVoiceEngine {
                                         SetMode(ServiceMode.Standby);
                                         break;
                                     }
-                                    phase += 0.22f;
-                                    float beat = (float)Math.Abs(Math.Sin(phase)) * 0.40f;
-                                    if (Math.Sin(phase * 2.3) > 0.55) beat += 0.25f;
-                                    Console.WriteLine("AMP:" + beat.ToString("0.00", CultureInfo.InvariantCulture));
-                                    Console.Out.Flush();
                                 }
                             }
                         });
@@ -389,7 +383,6 @@ namespace SphereVoiceEngine {
                     musicMonitorThread = new Thread(() => {
                         bool hasStarted = false;
                         int stoppedCount = 0;
-                        float phase = 0f;
                         while (isMusicPlaying) {
                             Thread.Sleep(80);
                             try {
@@ -399,11 +392,6 @@ namespace SphereVoiceEngine {
                                     if (state == 3 || state == 6 || state == 9 || state == 10) {
                                         hasStarted = true;
                                         stoppedCount = 0;
-                                        phase += 0.22f;
-                                        float beat = (float)Math.Abs(Math.Sin(phase)) * 0.40f;
-                                        if (Math.Sin(phase * 2.3) > 0.55) beat += 0.25f;
-                                        Console.WriteLine("AMP:" + beat.ToString("0.00", CultureInfo.InvariantCulture));
-                                        Console.Out.Flush();
                                     } else if (state == 8) {
                                         isMusicPlaying = false;
                                         Console.WriteLine("MUSIC_DONE");

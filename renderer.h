@@ -2,6 +2,7 @@
 #define RENDERER_H
 
 #include "config.h"
+#include "audio.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,6 +27,7 @@ void renderer_init(void);
 void renderer_set_state(AgentState state);
 AgentState renderer_get_state(void);
 void renderer_set_voice_amp(float amp);
+void renderer_set_vis_data(const AudioVisData *vis_data);
 void renderer_set_status(const char *status_text);
 void renderer_set_subtitle(const char *subtitle_text);
 void renderer_set_input_buffer(const char *input_text);

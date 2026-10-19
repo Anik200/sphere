@@ -2,7 +2,7 @@ ifeq ($(OS),Windows_NT)
     CC = gcc
     TARGET = sphere_ai.exe
     VOICE_SERVICE = sphere_voice_service.exe
-    LDFLAGS = -lwinmm -lwininet -lm
+    LDFLAGS = -lwinmm -lwininet -lole32 -lm
     CSC ?= C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe
     SPEECH_DLL ?= C:\Windows\Microsoft.NET\assembly\GAC_MSIL\System.Speech\v4.0_4.0.0.0__31bf3856ad364e35\System.Speech.dll
     CLEAN_CMD = cmd /c "del /Q $(TARGET) $(VOICE_SERVICE) *.o 2>nul || exit 0"

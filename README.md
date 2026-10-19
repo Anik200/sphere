@@ -27,6 +27,8 @@ A fast, lightweight, native C voice assistant and 3D ANSI Braille visualizer. Ru
 ## Features
 
 - **Native C Architecture**: Written in ANSI C (`main.c`, `renderer.c`, `audio.c`, `brain.c`, `search.c`, `agent.c`) with zero bloated frameworks.
+- **Small AI Model & Dynamic Fetch Router**: Integrates local Small Language Models (SLMs) such as `qwen2.5:0.5b` or `smollm`. Intelligently decides whether to answer directly with AI reasoning or dynamically fetch live facts (weather, news, current events) first before generating speech.
+- **True Real-Time Beat Visualizer**: Windows Audio Session API (WASAPI) master loopback capture with multi-band DSP (kick bass 40-160Hz, treble >2.6kHz, mid) and transient onset detection. The 3D Braille sphere pumps radially on bass kicks and ripples on beats like an audio visualizer.
 - **Modern TCSS / Terminal UI**: OpenCode-inspired status pills, dynamic Unicode block volume meters, actor dialogue tags, and responsive keybinding pills.
 - **3D Braille Particle Sphere**: Real-time 60 FPS 3D particle engine rendered via 2x4 Braille glyphs with smooth radial color blooms and audio-driven ripples.
 - **Wake-Word & Push-to-Talk**: Instant activation on "Hey Sphere" or by pressing Space/Enter. Supports seamless single-breath queries.

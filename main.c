@@ -89,8 +89,9 @@ static HANDLE hRenderThread = NULL;
 static DWORD WINAPI render_loop_thread(LPVOID lpParam) {
     (void)lpParam;
     while (app_running) {
-        float amp = audio_get_current_amp();
-        renderer_set_voice_amp(amp);
+        AudioVisData vis;
+        audio_get_vis_data(&vis);
+        renderer_set_vis_data(&vis);
         renderer_render_frame();
         Sleep(FRAME_DELAY_MS);
     }
@@ -109,8 +110,9 @@ static int render_thread_started = 0;
 static void *render_loop_thread(void *lpParam) {
     (void)lpParam;
     while (app_running) {
-        float amp = audio_get_current_amp();
-        renderer_set_voice_amp(amp);
+        AudioVisData vis;
+        audio_get_vis_data(&vis);
+        renderer_set_vis_data(&vis);
         renderer_render_frame();
         usleep(FRAME_DELAY_MS * 1000);
     }

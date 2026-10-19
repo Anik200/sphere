@@ -7,9 +7,18 @@
 #include <math.h>
 
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <mmsystem.h>
+#include <initguid.h>
+#include <mmdeviceapi.h>
+#include <audioclient.h>
 #include <io.h>
+
+DEFINE_GUID(CLSID_MMDeviceEnumerator_local, 0xBCDE0395, 0xE52F, 0x467C, 0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E);
+DEFINE_GUID(IID_IMMDeviceEnumerator_local, 0xA95664D2, 0x9614, 0x4F35, 0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6);
+DEFINE_GUID(IID_IAudioClient_local, 0x1CB9AD4C, 0xDBFA, 0x4C32, 0xB1, 0x78, 0xC2, 0xF5, 0x68, 0xA7, 0x03, 0xB2);
+DEFINE_GUID(IID_IAudioCaptureClient_local, 0xC8ADBD64, 0xE71E, 0x48A0, 0xA4, 0xDE, 0x18, 0x5C, 0x39, 0x5C, 0xD3, 0x17);
 #else
 #define _GNU_SOURCE
 #include <unistd.h>
@@ -55,6 +64,13 @@ static void audio_unlock(void) {
 }
 #endif
 
+static AudioVisData current_vis = {0};
+static volatile int loopback_running = 0;
+#ifdef _WIN32
+static HANDLE hLoopbackThread = NULL;
+static CRITICAL_SECTION vis_cs;
+#endif
+
 static volatile float current_amp = 0.0f;
 static volatile float input_amp = 0.0f;
 static volatile int wake_detected = 0;
@@ -97,6 +113,265 @@ static volatile int final_speech_ready = 0;
 
 static char spoken_words_stream[4096] = {0};
 static volatile int service_running = 0;
+
+#ifdef _WIN32
+static DWORD WINAPI wasapi_loopback_thread(LPVOID lpParam) {
+    (void)lpParam;
+    HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (FAILED(hr)) return 0;
+
+    IMMDeviceEnumerator *pEnumerator = NULL;
+    hr = CoCreateInstance(&CLSID_MMDeviceEnumerator_local, NULL, CLSCTX_ALL,
+                          &IID_IMMDeviceEnumerator_local, (void**)&pEnumerator);
+    if (FAILED(hr) || !pEnumerator) {
+        CoUninitialize();
+        return 0;
+    }
+
+    IMMDevice *pDevice = NULL;
+    hr = pEnumerator->lpVtbl->GetDefaultAudioEndpoint(pEnumerator, eRender, eConsole, &pDevice);
+    if (FAILED(hr) || !pDevice) {
+        pEnumerator->lpVtbl->Release(pEnumerator);
+        CoUninitialize();
+        return 0;
+    }
+
+    IAudioClient *pAudioClient = NULL;
+    hr = pDevice->lpVtbl->Activate(pDevice, &IID_IAudioClient_local, CLSCTX_ALL, NULL, (void**)&pAudioClient);
+    if (FAILED(hr) || !pAudioClient) {
+        pDevice->lpVtbl->Release(pDevice);
+        pEnumerator->lpVtbl->Release(pEnumerator);
+        CoUninitialize();
+        return 0;
+    }
+
+    WAVEFORMATEX *pwfx = NULL;
+    hr = pAudioClient->lpVtbl->GetMixFormat(pAudioClient, &pwfx);
+    if (FAILED(hr) || !pwfx) {
+        pAudioClient->lpVtbl->Release(pAudioClient);
+        pDevice->lpVtbl->Release(pDevice);
+        pEnumerator->lpVtbl->Release(pEnumerator);
+        CoUninitialize();
+        return 0;
+    }
+
+    int is_float = 0;
+    if (pwfx->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
+        is_float = 1;
+    } else if (pwfx->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+        WAVEFORMATEXTENSIBLE *pExt = (WAVEFORMATEXTENSIBLE*)pwfx;
+        static const GUID guid_float = { 0x00000003, 0x0000, 0x0010, { 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71 } };
+        if (memcmp(&pExt->SubFormat, &guid_float, sizeof(GUID)) == 0) {
+            is_float = 1;
+        }
+    }
+
+    int channels = pwfx->nChannels;
+    if (channels < 1) channels = 1;
+
+    REFERENCE_TIME hnsBufferDuration = 2000000; /* 200 ms */
+    hr = pAudioClient->lpVtbl->Initialize(pAudioClient, AUDCLNT_SHAREMODE_SHARED,
+                                         AUDCLNT_STREAMFLAGS_LOOPBACK,
+                                         hnsBufferDuration, 0, pwfx, NULL);
+    if (FAILED(hr)) {
+        CoTaskMemFree(pwfx);
+        pAudioClient->lpVtbl->Release(pAudioClient);
+        pDevice->lpVtbl->Release(pDevice);
+        pEnumerator->lpVtbl->Release(pEnumerator);
+        CoUninitialize();
+        return 0;
+    }
+
+    IAudioCaptureClient *pCaptureClient = NULL;
+    hr = pAudioClient->lpVtbl->GetService(pAudioClient, &IID_IAudioCaptureClient_local, (void**)&pCaptureClient);
+    if (FAILED(hr) || !pCaptureClient) {
+        CoTaskMemFree(pwfx);
+        pAudioClient->lpVtbl->Release(pAudioClient);
+        pDevice->lpVtbl->Release(pDevice);
+        pEnumerator->lpVtbl->Release(pEnumerator);
+        CoUninitialize();
+        return 0;
+    }
+
+    hr = pAudioClient->lpVtbl->Start(pAudioClient);
+    if (FAILED(hr)) {
+        pCaptureClient->lpVtbl->Release(pCaptureClient);
+        CoTaskMemFree(pwfx);
+        pAudioClient->lpVtbl->Release(pAudioClient);
+        pDevice->lpVtbl->Release(pDevice);
+        pEnumerator->lpVtbl->Release(pEnumerator);
+        CoUninitialize();
+        return 0;
+    }
+
+    float bass_lp1 = 0.0f, bass_lp2 = 0.0f;
+    float hp_treble = 0.0f;
+    float bass_history[40] = {0};
+    int bass_hist_idx = 0;
+    DWORD last_beat_tick = 0;
+    float prev_bass_rms = 0.0f;
+
+    while (loopback_running) {
+        Sleep(8);
+
+        UINT32 packetLength = 0;
+        pCaptureClient->lpVtbl->GetNextPacketSize(pCaptureClient, &packetLength);
+
+        if (packetLength == 0) {
+            EnterCriticalSection(&vis_cs);
+            current_vis.overall_amp *= 0.91f;
+            current_vis.bass *= 0.89f;
+            current_vis.mid *= 0.90f;
+            current_vis.treble *= 0.88f;
+            current_vis.beat_pulse *= 0.82f;
+            current_vis.is_beat = 0;
+            LeaveCriticalSection(&vis_cs);
+            continue;
+        }
+
+        float sum_raw_sq = 0.0f;
+        float sum_bass_sq = 0.0f;
+        float sum_mid_sq = 0.0f;
+        float sum_treble_sq = 0.0f;
+        int total_frames = 0;
+
+        while (packetLength > 0 && loopback_running) {
+            BYTE *pData = NULL;
+            UINT32 numFramesRead = 0;
+            DWORD flags = 0;
+            hr = pCaptureClient->lpVtbl->GetBuffer(pCaptureClient, &pData, &numFramesRead, &flags, NULL, NULL);
+            if (SUCCEEDED(hr)) {
+                if (!(flags & AUDCLNT_BUFFERFLAGS_SILENT) && pData != NULL) {
+                    if (is_float) {
+                        const float *f_samples = (const float*)pData;
+                        for (UINT32 i = 0; i < numFramesRead; i++) {
+                            float mono = 0.0f;
+                            for (int c = 0; c < channels; c++) {
+                                mono += f_samples[i * channels + c];
+                            }
+                            mono /= (float)channels;
+
+                            sum_raw_sq += mono * mono;
+
+                            /* 2-pole cascaded low-pass for bass (cutoff ~160 Hz at 48kHz) */
+                            bass_lp1 += 0.021f * (mono - bass_lp1);
+                            bass_lp2 += 0.021f * (bass_lp1 - bass_lp2);
+                            sum_bass_sq += bass_lp2 * bass_lp2;
+
+                            /* Treble high-pass (cutoff ~2600 Hz) */
+                            hp_treble += 0.29f * (mono - hp_treble);
+                            float treble_s = mono - hp_treble;
+                            sum_treble_sq += treble_s * treble_s;
+
+                            /* Midrange */
+                            float mid_s = hp_treble - bass_lp1;
+                            sum_mid_sq += mid_s * mid_s;
+
+                            total_frames++;
+                        }
+                    } else if (pwfx->wBitsPerSample == 16) {
+                        const short *s_samples = (const short*)pData;
+                        for (UINT32 i = 0; i < numFramesRead; i++) {
+                            float mono = 0.0f;
+                            for (int c = 0; c < channels; c++) {
+                                mono += (float)s_samples[i * channels + c];
+                            }
+                            mono /= ((float)channels * 32768.0f);
+
+                            sum_raw_sq += mono * mono;
+
+                            bass_lp1 += 0.021f * (mono - bass_lp1);
+                            bass_lp2 += 0.021f * (bass_lp1 - bass_lp2);
+                            sum_bass_sq += bass_lp2 * bass_lp2;
+
+                            hp_treble += 0.29f * (mono - hp_treble);
+                            float treble_s = mono - hp_treble;
+                            sum_treble_sq += treble_s * treble_s;
+
+                            float mid_s = hp_treble - bass_lp1;
+                            sum_mid_sq += mid_s * mid_s;
+
+                            total_frames++;
+                        }
+                    }
+                }
+                pCaptureClient->lpVtbl->ReleaseBuffer(pCaptureClient, numFramesRead);
+            }
+            pCaptureClient->lpVtbl->GetNextPacketSize(pCaptureClient, &packetLength);
+        }
+
+        if (total_frames > 0) {
+            float raw_rms = sqrtf(sum_raw_sq / total_frames);
+            float bass_rms = sqrtf(sum_bass_sq / total_frames);
+            float mid_rms = sqrtf(sum_mid_sq / total_frames);
+            float treble_rms = sqrtf(sum_treble_sq / total_frames);
+
+            /* Non-linear perceptual saturation */
+            float n_amp = tanhf(raw_rms * 4.5f);
+            float n_bass = tanhf(bass_rms * 7.2f);
+            float n_mid = tanhf(mid_rms * 5.2f);
+            float n_treble = tanhf(treble_rms * 5.8f);
+
+            /* Beat Onset Detection */
+            bass_history[bass_hist_idx] = n_bass;
+            bass_hist_idx = (bass_hist_idx + 1) % 40;
+            float bass_sum = 0.0f;
+            for (int k = 0; k < 40; k++) bass_sum += bass_history[k];
+            float bass_avg = bass_sum / 40.0f;
+
+            DWORD now = GetTickCount();
+            int beat_hit = 0;
+            float delta_bass = n_bass - prev_bass_rms;
+            prev_bass_rms = n_bass;
+
+            if (n_bass > 0.08f && n_bass > (bass_avg * 1.25f) && delta_bass > 0.015f && (now - last_beat_tick) >= 160) {
+                beat_hit = 1;
+                last_beat_tick = now;
+            }
+
+            EnterCriticalSection(&vis_cs);
+            if (n_amp > current_vis.overall_amp) {
+                current_vis.overall_amp = current_vis.overall_amp * 0.15f + n_amp * 0.85f;
+            } else {
+                current_vis.overall_amp = current_vis.overall_amp * 0.72f + n_amp * 0.28f;
+            }
+
+            if (n_bass > current_vis.bass) {
+                current_vis.bass = current_vis.bass * 0.12f + n_bass * 0.88f;
+            } else {
+                current_vis.bass = current_vis.bass * 0.68f + n_bass * 0.32f;
+            }
+
+            if (n_mid > current_vis.mid) {
+                current_vis.mid = current_vis.mid * 0.20f + n_mid * 0.80f;
+            } else {
+                current_vis.mid = current_vis.mid * 0.78f + n_mid * 0.22f;
+            }
+
+            if (n_treble > current_vis.treble) {
+                current_vis.treble = current_vis.treble * 0.15f + n_treble * 0.85f;
+            } else {
+                current_vis.treble = current_vis.treble * 0.72f + n_treble * 0.28f;
+            }
+
+            if (beat_hit) {
+                current_vis.beat_pulse = 1.0f;
+                current_vis.is_beat = 1;
+            }
+            LeaveCriticalSection(&vis_cs);
+        }
+    }
+
+    pAudioClient->lpVtbl->Stop(pAudioClient);
+    pCaptureClient->lpVtbl->Release(pCaptureClient);
+    CoTaskMemFree(pwfx);
+    pAudioClient->lpVtbl->Release(pAudioClient);
+    pDevice->lpVtbl->Release(pDevice);
+    pEnumerator->lpVtbl->Release(pEnumerator);
+    CoUninitialize();
+    return 0;
+}
+#endif
 
 static void write_wav_file(const char *filename, const short *pcm_data, int num_samples) {
     if (!filename || !pcm_data || num_samples <= 0) return;
@@ -514,6 +789,9 @@ static void *voice_reader_thread(void *lpParam) {
 int audio_init(void) {
 #ifdef _WIN32
     InitializeCriticalSection(&audio_cs);
+    InitializeCriticalSection(&vis_cs);
+    loopback_running = 1;
+    hLoopbackThread = CreateThread(NULL, 0, wasapi_loopback_thread, NULL, 0, NULL);
 
     if (_access("sphere_voice_service.exe", 0) != 0) {
         system("C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /optimize+ "
@@ -721,30 +999,52 @@ int audio_get_final_speech(char *out_text, size_t max_len) {
     return got;
 }
 
-float audio_get_current_amp(void) {
+void audio_get_vis_data(AudioVisData *out_vis) {
+    if (!out_vis) return;
+#ifdef _WIN32
+    EnterCriticalSection(&vis_cs);
+    *out_vis = current_vis;
+    current_vis.beat_pulse *= 0.82f;
+    current_vis.is_beat = 0;
+    LeaveCriticalSection(&vis_cs);
+#else
+    audio_lock();
+    *out_vis = current_vis;
+    current_vis.beat_pulse *= 0.82f;
+    current_vis.is_beat = 0;
+    audio_unlock();
+#endif
+
     float mic = (current_amp > input_amp) ? current_amp : input_amp;
     current_amp *= 0.93f;
     input_amp *= 0.93f;
     if (mic > 1.0f) mic = 1.0f;
     if (mic < 0.0f) mic = 0.0f;
 
-    if (is_speaking) {
-        static float synth_phase = 0.0f;
-        synth_phase += 0.22f;
-        float synth_amp = 0.28f + 0.20f * sinf(synth_phase) * cosf(synth_phase * 0.45f);
-        if (synth_amp < 0.10f) synth_amp = 0.10f;
-        if (mic > synth_amp) return mic;
-        return synth_amp;
+    if (!is_music_playing) {
+        if (mic > out_vis->overall_amp) {
+            out_vis->overall_amp = mic;
+            out_vis->mid = mic * 0.85f;
+            out_vis->bass = mic * 0.50f;
+        }
+        if (is_speaking && out_vis->overall_amp < 0.12f) {
+            static float synth_phase = 0.0f;
+            synth_phase += 0.22f;
+            float synth_amp = 0.25f + 0.18f * sinf(synth_phase) * cosf(synth_phase * 0.45f);
+            if (synth_amp < 0.10f) synth_amp = 0.10f;
+            if (synth_amp > out_vis->overall_amp) {
+                out_vis->overall_amp = synth_amp;
+                out_vis->mid = synth_amp * 0.80f;
+                out_vis->bass = synth_amp * 0.45f;
+            }
+        }
     }
-    if (is_music_playing) {
-        static float music_phase = 0.0f;
-        music_phase += 0.16f;
-        float music_amp = 0.20f + 0.10f * sinf(music_phase) * cosf(music_phase * 0.5f);
-        if (music_amp < 0.10f) music_amp = 0.10f;
-        if (mic > music_amp) return mic;
-        return music_amp;
-    }
-    return mic;
+}
+
+float audio_get_current_amp(void) {
+    AudioVisData v;
+    audio_get_vis_data(&v);
+    return v.overall_amp;
 }
 
 static void clean_for_speech(const char *src, char *dst, size_t max_len) {
@@ -905,6 +1205,13 @@ void audio_cleanup(void) {
         CloseHandle(hChildStd_OUT_Rd);
         hChildStd_OUT_Rd = NULL;
     }
+    loopback_running = 0;
+    if (hLoopbackThread) {
+        WaitForSingleObject(hLoopbackThread, 600);
+        CloseHandle(hLoopbackThread);
+        hLoopbackThread = NULL;
+    }
+    DeleteCriticalSection(&vis_cs);
     DeleteCriticalSection(&audio_cs);
 #else
     if (posix_child_in >= 0) {

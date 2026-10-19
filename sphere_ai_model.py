@@ -1,0 +1,252 @@
+import sys
+import os
+import json
+import re
+import urllib.parse
+import urllib.request
+import subprocess
+import time
+
+FETCH_PATTERNS = [
+    r"\b(weather|forecast|temperature|rain|snow|humidity)\b",
+    r"\b(news|headline|latest|recent|current|today|tonight|yesterday|now)\b",
+    r"\b(stock|price|market|crypto|bitcoin|shares)\b",
+    r"\b(who won|score|match|game|tournament|champion|medal)\b",
+    r"\b(when is the next|release date|upcoming|scheduled)\b",
+    r"\b(who is the (current|new|present) (president|prime minister|ceo|leader|governor|mayor))\b",
+    r"\b(what happened (to|in|at)|events in)\b",
+    r"\b(traffic in|flight status)\b",
+    r"\b(population of|exchange rate)\b"
+]
+
+def should_fetch(query: str) -> bool:
+    q = query.lower().strip()
+    for pattern in FETCH_PATTERNS:
+        if re.search(pattern, q):
+            return True
+    return False
+
+def fetch_weather(query: str) -> str:
+    cleaned = re.sub(r"^(hey\s+sphere|sphere|please|what\s+is|what's|how\s+is)\s+", "", query, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(the\s+weather|weather|in|today|for|now|temperature|forecast|at)\b", "", cleaned, flags=re.IGNORECASE).strip()
+    city = cleaned.split()[0] if cleaned else "London"
+    try:
+        url = f"https://wttr.in/{urllib.parse.quote(city)}?format=3"
+        req = urllib.request.Request(url, headers={"User-Agent": "curl/7.88.1"})
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            data = resp.read().decode("utf-8", errors="ignore").strip()
+            if data and len(data) > 3 and "404" not in data:
+                return f"Live weather report: {data}"
+    except Exception:
+        pass
+    return ""
+
+def fetch_wikipedia_info(query: str) -> str:
+    cleaned = re.sub(r"^(hey\s+sphere|sphere|please|can\s+you\s+tell\s+me|tell\s+me|what\s+is|who\s+is|where\s+is|tell\s+me\s+about)\s+", "", query, flags=re.IGNORECASE).strip()
+    if not cleaned:
+        cleaned = query
+    encoded_q = urllib.parse.quote(cleaned)
+
+    try:
+        # Search for canonical title
+        search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={encoded_q}&srlimit=1&format=json"
+        req = urllib.request.Request(search_url, headers={"User-Agent": "SphereAI/2.0 (voice-client)"})
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            search_items = data.get("query", {}).get("search", [])
+            if not search_items:
+                return ""
+            title = search_items[0].get("title", "")
+            if not title:
+                return ""
+
+        # Fetch lead extract
+        ext_url = f"https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles={urllib.parse.quote(title)}&format=json"
+        req2 = urllib.request.Request(ext_url, headers={"User-Agent": "SphereAI/2.0 (voice-client)"})
+        with urllib.request.urlopen(req2, timeout=3.0) as resp2:
+            data2 = json.loads(resp2.read().decode("utf-8", errors="ignore"))
+            pages = data2.get("query", {}).get("pages", {})
+            for p in pages.values():
+                ext = p.get("extract", "").strip()
+                if ext and len(ext) > 20:
+                    return ext
+    except Exception:
+        pass
+    return ""
+
+def fetch_duckduckgo_info(query: str) -> str:
+    cleaned = re.sub(r"^(hey\s+sphere|sphere|please)\s+", "", query, flags=re.IGNORECASE).strip()
+    encoded = urllib.parse.quote(cleaned)
+    try:
+        url = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_html=1&skip_disambig=1"
+        req = urllib.request.Request(url, headers={"User-Agent": "SphereAI/2.0"})
+        with urllib.request.urlopen(req, timeout=3.0) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            abstract = data.get("AbstractText", "").strip()
+            if abstract and len(abstract) > 20:
+                return abstract
+            answer = data.get("Answer", "").strip()
+            if answer:
+                return answer
+    except Exception:
+        pass
+    return ""
+
+def fetch_live_info(query: str) -> str:
+    q_lower = query.lower()
+    if any(w in q_lower for w in ["weather", "forecast", "temperature", "rain"]):
+        w = fetch_weather(query)
+        if w:
+            return w
+
+    ddg = fetch_duckduckgo_info(query)
+    if ddg:
+        return ddg
+
+    wiki = fetch_wikipedia_info(query)
+    if wiki:
+        return wiki
+
+    return ""
+
+def ensure_ollama_running() -> bool:
+    try:
+        req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "SphereAI/2.0"})
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
+            return True
+    except Exception:
+        pass
+
+    # Attempt to auto-start ollama serve on Windows
+    ollama_path = r"C:\Users\hp\AppData\Local\Programs\Ollama\ollama.exe"
+    if os.path.exists(ollama_path):
+        try:
+            subprocess.Popen([ollama_path, "serve"], creationflags=0x08000000)
+            time.sleep(1.0)
+            req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "SphereAI/2.0"})
+            with urllib.request.urlopen(req, timeout=1.5) as resp:
+                return True
+        except Exception:
+            pass
+    return False
+
+def get_best_ollama_model() -> str:
+    pref_models = ["qwen2.5:0.5b", "smollm", "qwen2.5-coder:7b-instruct", "qwen-agent", "llama3.2:1b"]
+    custom_model = os.environ.get("SPHERE_AI_MODEL", "").strip()
+    if custom_model:
+        return custom_model
+
+    try:
+        req = urllib.request.Request("http://localhost:11434/api/tags", headers={"User-Agent": "SphereAI/2.0"})
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            installed = [m.get("name", "") for m in data.get("models", [])]
+            for p in pref_models:
+                for inst in installed:
+                    if inst.startswith(p):
+                        return inst
+            if installed:
+                return installed[0]
+    except Exception:
+        pass
+    return "qwen2.5:0.5b"
+
+def generate_ai_answer(prompt: str, model_name: str) -> str:
+    if not ensure_ollama_running():
+        return ""
+
+    try:
+        url = "http://localhost:11434/api/generate"
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.65,
+                "num_predict": 120,
+                "top_p": 0.9
+            }
+        }
+        data_bytes = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data_bytes, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10.0) as resp:
+            res_json = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            ans = res_json.get("response", "").strip()
+            # Clean up markdown tags or quotes
+            ans = ans.strip('"').strip("'").strip()
+            ans = re.sub(r"[\*#`_]", "", ans)
+            return ans
+    except Exception:
+        return ""
+
+def process_query(query: str, existing_context: str = "") -> dict:
+    needs_fetch = should_fetch(query)
+    fetched_context = existing_context
+
+    if needs_fetch and not fetched_context:
+        fetched_context = fetch_live_info(query)
+
+    model_name = get_best_ollama_model()
+
+    system_instruction = (
+        "You are SphereAI, an intelligent 3D Braille voice assistant paired with pairing audio visualization. "
+        "Answer the user concisely in 1-2 spoken sentences suitable for voice synthesis. "
+        "Be clear, natural, and friendly. Do not use bullet points, asterisks, or markdown formatting."
+    )
+
+    if fetched_context:
+        prompt = (
+            f"{system_instruction}\n\n"
+            f"Verified live factual context:\n{fetched_context}\n\n"
+            f"User Question: {query}\n\n"
+            f"Answer based on the facts in 1-2 spoken sentences:"
+        )
+        action = "fetch_and_answer"
+    else:
+        prompt = (
+            f"{system_instruction}\n\n"
+            f"User Question: {query}\n\n"
+            f"Answer concisely in 1-2 spoken sentences:"
+        )
+        action = "direct_answer"
+
+    ai_answer = generate_ai_answer(prompt, model_name)
+
+    if not ai_answer and fetched_context:
+        ai_answer = fetched_context
+        sentences = re.split(r"(?<=[.!?])\s+", ai_answer)
+        if len(sentences) > 2:
+            ai_answer = " ".join(sentences[:2])
+
+    is_happy = 0
+    lower_ans = ai_answer.lower()
+    if any(w in lower_ans for w in ["joy", "happy", "wonderful", "delighted", "awesome", "fantastic", "glad"]):
+        is_happy = 1
+
+    return {
+        "found": 1 if len(ai_answer) > 0 else 0,
+        "answer": ai_answer,
+        "action": action,
+        "model": model_name,
+        "is_happy": is_happy
+    }
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: python sphere_ai_model.py <query> <output_json_path> [context]")
+        sys.exit(1)
+
+    query = sys.argv[1].strip()
+    out_file = sys.argv[2].strip()
+    existing_context = sys.argv[3].strip() if len(sys.argv) >= 4 else ""
+
+    result = process_query(query, existing_context)
+
+    try:
+        with open(out_file, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False)
+    except Exception as ex:
+        print("Error writing output file:", ex)
+
+if __name__ == "__main__":
+    main()
