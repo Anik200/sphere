@@ -598,7 +598,10 @@ static void *voice_reader_thread(void *lpParam) {
             if (c == '\n') {
                 line_buf[line_len] = '\0';
                 if (line_len > 0) {
-                    if (strncmp(line_buf, "AMP:", 4) == 0) {
+                    if (strncmp(line_buf, "AUDIO_DEVICE:", 13) == 0) {
+                        printf("[Sphere Audio] Active Microphone: %s\n", line_buf + 13);
+                        fflush(stdout);
+                    } else if (strncmp(line_buf, "AMP:", 4) == 0) {
                         float a = (float)atof(line_buf + 4);
                         if (a > input_amp) {
                             input_amp = input_amp * 0.20f + a * 0.80f;

@@ -6,8 +6,238 @@ using System.Speech.Synthesis;
 using System.Threading;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using System.Runtime.InteropServices;
 
 namespace SphereVoiceEngine {
+    public enum ERole : uint {
+        eConsole = 0,
+        eMultimedia = 1,
+        eCommunications = 2
+    }
+
+    [ComImport, Guid("F8679F50-850A-41CF-9C72-430F290290C8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IPolicyConfig {
+        [PreserveSig] int GetMixFormat();
+        [PreserveSig] int GetDeviceFormat();
+        [PreserveSig] int ResetDeviceFormat();
+        [PreserveSig] int SetDeviceFormat();
+        [PreserveSig] int GetProcessingPeriod();
+        [PreserveSig] int SetProcessingPeriod();
+        [PreserveSig] int GetShareMode();
+        [PreserveSig] int SetShareMode();
+        [PreserveSig] int GetPropertyValue();
+        [PreserveSig] int SetPropertyValue();
+        [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string wszDeviceId, ERole eRole);
+        [PreserveSig] int SetEndpointVisibility();
+    }
+
+    [ComImport, Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")]
+    internal class CPolicyConfigClientWin10 { }
+
+    [ComImport, Guid("2A417537-8861-4603-B087-F82329DC375A")]
+    internal class CPolicyConfigClientWin7 { }
+
+    [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+    class MMDeviceEnumeratorLocal { }
+
+    [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IMMDeviceEnumerator {
+        [PreserveSig] int EnumAudioEndpoints(int dataFlow, int stateMask, out IMMDeviceCollection ppDevices);
+        [PreserveSig] int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);
+    }
+
+    [Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IMMDeviceCollection {
+        [PreserveSig] int GetCount(out int pcDevices);
+        [PreserveSig] int Item(int nDevice, out IMMDevice ppDevice);
+    }
+
+    [Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IMMDevice {
+        [PreserveSig] int Activate(ref Guid iid, int clsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+        [PreserveSig] int OpenPropertyStore(int stgmAccess, out IPropertyStore ppProperties);
+        [PreserveSig] int GetId([MarshalAs(UnmanagedType.LPWStr)] out string ppstrId);
+        [PreserveSig] int GetState(out int pdwState);
+    }
+
+    [Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IPropertyStore {
+        [PreserveSig] int GetCount(out int cProps);
+        [PreserveSig] int GetAt(int iProp, out PROPERTYKEY pkey);
+        [PreserveSig] int GetValue(ref PROPERTYKEY key, out PROPVARIANT pv);
+        [PreserveSig] int SetValue(ref PROPERTYKEY key, ref PROPVARIANT propvar);
+        [PreserveSig] int Commit();
+    }
+
+    [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IAudioEndpointVolume {
+        [PreserveSig] int RegisterControlChangeNotify(IntPtr pNotify);
+        [PreserveSig] int UnregisterControlChangeNotify(IntPtr pNotify);
+        [PreserveSig] int GetChannelCount(out int pnChannelCount);
+        [PreserveSig] int SetMasterVolumeLevel(float fLevelDB, ref Guid pguidEventContext);
+        [PreserveSig] int SetMasterVolumeLevelScalar(float fLevel, ref Guid pguidEventContext);
+        [PreserveSig] int GetMasterVolumeLevel(out float pfLevelDB);
+        [PreserveSig] int GetMasterVolumeLevelScalar(out float pfLevel);
+        [PreserveSig] int SetChannelVolumeLevel(int nChannel, float fLevelDB, ref Guid pguidEventContext);
+        [PreserveSig] int SetChannelVolumeLevelScalar(int nChannel, float fLevel, ref Guid pguidEventContext);
+        [PreserveSig] int GetChannelVolumeLevel(int nChannel, out float pfLevelDB);
+        [PreserveSig] int GetChannelVolumeLevelScalar(int nChannel, out float pfLevel);
+        [PreserveSig] int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid pguidEventContext);
+        [PreserveSig] int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct PROPERTYKEY {
+        public Guid fmtid;
+        public int pid;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    struct PROPVARIANT {
+        [FieldOffset(0)] public short vt;
+        [FieldOffset(8)] public IntPtr pwszVal;
+    }
+
+    static class AudioDeviceManager {
+        static string GetDeviceName(IMMDevice dev) {
+            try {
+                IPropertyStore store;
+                dev.OpenPropertyStore(0, out store);
+                PROPERTYKEY key = new PROPERTYKEY { fmtid = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), pid = 14 };
+                PROPVARIANT pv;
+                store.GetValue(ref key, out pv);
+                return Marshal.PtrToStringUni(pv.pwszVal) ?? "Unknown";
+            } catch { return "Unknown"; }
+        }
+
+        public static bool SetDefaultEndpoint(string deviceId) {
+            try {
+                var policy = (IPolicyConfig)new CPolicyConfigClientWin10();
+                policy.SetDefaultEndpoint(deviceId, ERole.eConsole);
+                policy.SetDefaultEndpoint(deviceId, ERole.eMultimedia);
+                policy.SetDefaultEndpoint(deviceId, ERole.eCommunications);
+                return true;
+            } catch {
+                try {
+                    var policy = (IPolicyConfig)new CPolicyConfigClientWin7();
+                    policy.SetDefaultEndpoint(deviceId, ERole.eConsole);
+                    policy.SetDefaultEndpoint(deviceId, ERole.eMultimedia);
+                    policy.SetDefaultEndpoint(deviceId, ERole.eCommunications);
+                    return true;
+                } catch {
+                    return false;
+                }
+            }
+        }
+
+        public static string ConfigureBestMicrophone() {
+            try {
+                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorLocal());
+                IMMDevice defaultDev = null;
+                string defaultId = "";
+                string defaultName = "";
+                int hr = enumerator.GetDefaultAudioEndpoint(1, 0, out defaultDev); // eCapture=1, eConsole=0
+                if (hr == 0 && defaultDev != null) {
+                    defaultDev.GetId(out defaultId);
+                    defaultName = GetDeviceName(defaultDev);
+                }
+
+                IMMDeviceCollection col;
+                hr = enumerator.EnumAudioEndpoints(1, 1, out col); // eCapture=1, DEVICE_STATE_ACTIVE=1
+                if (hr != 0 || col == null) return defaultName;
+
+                int count;
+                col.GetCount(out count);
+
+                string[] dummyKeywords = new string[] {
+                    "audiocular", "dac", "steam", "stereo mix", "stereo-mix",
+                    "wave out", "what u hear", "cable", "droidcam", "wo mic",
+                    "line in", "line-in", "virtual", "blackhole", "voicemeeter", "vb-audio"
+                };
+
+                string bestId = defaultId;
+                string bestName = defaultName;
+                int bestScore = -999;
+
+                for (int i = 0; i < count; i++) {
+                    IMMDevice dev;
+                    col.Item(i, out dev);
+                    if (dev == null) continue;
+
+                    string id;
+                    dev.GetId(out id);
+                    string name = GetDeviceName(dev);
+                    string lower = name.ToLowerInvariant();
+
+                    int score = 0;
+                    bool isDummy = false;
+                    foreach (string d in dummyKeywords) {
+                        if (lower.Contains(d)) {
+                            isDummy = true;
+                            break;
+                        }
+                    }
+
+                    if (isDummy) {
+                        score = -100;
+                    } else {
+                        if (lower.Contains("array")) score += 40;
+                        if (lower.Contains("amd") || lower.Contains("realtek") || lower.Contains("intel") || lower.Contains("synaptics") || lower.Contains("conexant")) score += 30;
+                        else if (lower.Contains("omen") || lower.Contains("webcam") || lower.Contains("camera")) score += 15;
+                        if (lower.Contains("usb") || lower.Contains("yeti") || lower.Contains("fifine") || lower.Contains("hyperx") || lower.Contains("rode") || lower.Contains("shure")) score += 35;
+                        if (lower.Contains("microphone") || lower.Contains("mic")) score += 10;
+                        if (id == defaultId) score += 5;
+                    }
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestId = id;
+                        bestName = name;
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(bestId) && bestId != defaultId && bestScore > 0) {
+                    SetDefaultEndpoint(bestId);
+                }
+
+                // Ensure unmuted and master volume >= 90% on selected mic
+                for (int i = 0; i < count; i++) {
+                    IMMDevice dev;
+                    col.Item(i, out dev);
+                    if (dev == null) continue;
+                    string id;
+                    dev.GetId(out id);
+                    if (id == bestId) {
+                        try {
+                            Guid iidVol = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
+                            object oVol;
+                            dev.Activate(ref iidVol, 1, IntPtr.Zero, out oVol);
+                            if (oVol != null) {
+                                var vol = (IAudioEndpointVolume)oVol;
+                                bool isMuted;
+                                vol.GetMute(out isMuted);
+                                Guid g = Guid.Empty;
+                                if (isMuted) {
+                                    vol.SetMute(false, ref g);
+                                }
+                                float level;
+                                vol.GetMasterVolumeLevelScalar(out level);
+                                if (level < 0.80f) {
+                                    vol.SetMasterVolumeLevelScalar(0.90f, ref g);
+                                }
+                            }
+                        } catch { }
+                        break;
+                    }
+                }
+
+                return bestName;
+            } catch {
+                return "Default";
+            }
+        }
+    }
+
     enum ServiceMode {
         Standby,
         Listening,
@@ -187,6 +417,10 @@ namespace SphereVoiceEngine {
 
                 CultureInfo recCulture = sre.RecognizerInfo.Culture;
 
+                string activeMic = AudioDeviceManager.ConfigureBestMicrophone();
+                Console.WriteLine("AUDIO_DEVICE:" + activeMic);
+                Console.Out.Flush();
+
                 bool inputConfigured = false;
                 for (int attempt = 0; attempt < 3; attempt++) {
                     try {
@@ -209,9 +443,10 @@ namespace SphereVoiceEngine {
 
                 Choices wakeChoices = new Choices(new string[] {
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
-                    "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay sphere",
+                    "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
+                    "hey square", "square", "hey sphear", "hey severe", "severe", "hey steer", "steer", "hey spire", "spire", "hey spir",
                     "hey fear", "hi fear", "hello fear", "her sphere", "here sphere", "hear sphere",
-                    "hey spare", "the sphere", "a sphere", "hay sphere", "ay sphere",
+                    "hey spare", "the sphere", "a sphere", "hay sphere", "ay sphere", "hey siri", "hey sir",
                     "wake up", "wake up sphere",
                     "stop", "exit", "quit", "goodbye", "good bye", "bye", "bye bye", "shutdown", "shut down",
                     "close app", "exit app", "quit app", "see you later",
@@ -229,7 +464,9 @@ namespace SphereVoiceEngine {
                 Choices wakePrefixChoices = new Choices(new string[] {
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                     "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
+                    "hey square", "square", "hey sphear", "hey severe", "severe", "hey steer", "steer", "hey spire", "spire",
                     "her sphere", "here sphere", "hey fear", "wake up sphere", "wake up",
+                    "hey spare", "hay sphere", "ay sphere", "hey siri",
                     "hey sphere play", "sphere play", "play"
                 });
                 GrammarBuilder wakeDictGb = new GrammarBuilder();
@@ -321,8 +558,9 @@ namespace SphereVoiceEngine {
             string[] wakes = new string[] {
                 "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                 "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
+                "hey square", "square", "hey sphear", "hey severe", "severe", "hey steer", "steer", "hey spire", "spire", "hey spir",
                 "hey fear", "hi fear", "hello fear", "her sphere", "here sphere", "hear sphere",
-                "hey spare", "the sphere", "a sphere", "hay sphere", "ay sphere", "wake up", "wake up sphere"
+                "hey spare", "the sphere", "a sphere", "my sphere", "hay sphere", "ay sphere", "hey siri", "hey sir", "wake up", "wake up sphere"
             };
             foreach (string w in wakes) {
                 if (clean == w) return true;
@@ -337,10 +575,11 @@ namespace SphereVoiceEngine {
             string[] prefixes = new string[] {
                 "hey, sphere", "hey sphere", "hi, sphere", "hi sphere", "hello, sphere", "hello sphere",
                 "ok, sphere", "ok sphere", "okay, sphere", "okay sphere", "yo, sphere", "yo sphere",
-                "hey, spear", "hey spear", "hi, spear", "hi spear", "hello, spear", "hello spear",
+                "hey, spear", "hey spear", "hi, spear", "hi spear", "hello, spear", "hello sphere",
                 "ok spear", "okay spear", "wake up sphere", "wake up", "her sphere", "here sphere", "hear sphere",
-                "hey fear", "hi fear", "hello fear", "hey spare", "the sphere", "a sphere",
-                "hay sphere", "ay sphere", "sphere", "spear"
+                "hey square", "square", "hey sphear", "hey severe", "severe", "hey steer", "steer", "hey spire", "spire",
+                "hey fear", "hi fear", "hello fear", "hey spare", "the sphere", "a sphere", "my sphere",
+                "hay sphere", "ay sphere", "hey siri", "hey sir", "sphere", "spear"
             };
             foreach (string p in prefixes) {
                 if (lower == p) {
@@ -369,10 +608,11 @@ namespace SphereVoiceEngine {
                 "hey, sphere", "hey sphere", "hi, sphere", "hi sphere", "hello, sphere", "hello sphere",
                 "ok, sphere", "ok sphere", "okay, sphere", "okay sphere", "yo, sphere", "yo sphere",
                 "her sphere", "here sphere", "hear sphere",
-                "hey, spear", "hey spear", "hi, spear", "hi spear", "hello, spear", "hello spear",
+                "hey, spear", "hey spear", "hi, spear", "hi spear", "hello, spear", "hello sphere",
                 "ok spear", "okay spear", "spear",
-                "hey fear", "hi fear", "hello fear", "hey spare", "the sphere", "a sphere",
-                "hay sphere", "ay sphere", "wake up sphere", "wake up", "sphere"
+                "hey square", "square", "hey sphear", "hey severe", "severe", "hey steer", "steer", "hey spire", "spire", "hey spir",
+                "hey fear", "hi fear", "hello fear", "hey spare", "the sphere", "a sphere", "my sphere",
+                "hay sphere", "ay sphere", "hey siri", "hey sir", "wake up sphere", "wake up", "sphere"
             };
 
             foreach (string kw in sphereKeywords) {
@@ -564,7 +804,11 @@ namespace SphereVoiceEngine {
                 line = line.Trim();
                 if (string.IsNullOrEmpty(line)) continue;
 
-                if (line.Equals("CMD:WAKE_STANDBY", StringComparison.OrdinalIgnoreCase)) {
+                if (line.Equals("CMD:CHECK_AUDIO", StringComparison.OrdinalIgnoreCase)) {
+                    string mic = AudioDeviceManager.ConfigureBestMicrophone();
+                    Console.WriteLine("AUDIO_DEVICE:" + mic);
+                    Console.Out.Flush();
+                } else if (line.Equals("CMD:WAKE_STANDBY", StringComparison.OrdinalIgnoreCase)) {
                     StopMusic();
                     try { synth.SpeakAsyncCancelAll(); } catch { }
                     SetMode(ServiceMode.Standby);
@@ -639,7 +883,9 @@ namespace SphereVoiceEngine {
         static void Sre_AudioLevelUpdated(object sender, AudioLevelUpdatedEventArgs e) {
             int level = e.AudioLevel;
             DateTime now = DateTime.UtcNow;
-            if (Math.Abs(level - lastAudioLevel) >= 1 || (now - lastAmpSendTime).TotalMilliseconds >= 25) {
+            bool changed = Math.Abs(level - lastAudioLevel) >= 1;
+            bool periodic = (now - lastAmpSendTime).TotalMilliseconds >= 50;
+            if (changed || (level > 0 && periodic) || (lastAudioLevel > 0 && level == 0)) {
                 lastAudioLevel = level;
                 lastAmpSendTime = now;
                 float normAmp = Math.Min(1.0f, level / 40.0f);
