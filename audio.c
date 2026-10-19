@@ -216,11 +216,20 @@ static void *voice_reader_thread(void *lpParam) {
                         int samples_count = num_recorded_samples;
                         audio_unlock();
 
+                        const char *sapi_text = line_buf + 6;
+                        while (*sapi_text && isspace((unsigned char)*sapi_text)) sapi_text++;
+
+                        int sapi_is_music = (strncasecmp(sapi_text, "play", 4) == 0 ||
+                                             strncasecmp(sapi_text, "song", 4) == 0 ||
+                                             strncasecmp(sapi_text, "listen", 6) == 0 ||
+                                             strncasecmp(sapi_text, "put on", 6) == 0);
+
                         char precise_text[512] = {0};
                         int got_precise = 0;
 
-                        // If audio was captured, transcribe with Google Neural STT for pinpoint accuracy!
-                        if (samples_count > (int)(SAMPLE_RATE * 0.35f)) {
+                        // If audio was captured, only transcribe with Google Neural STT if SAPI was not a music command
+                        // and we have at least 1.0s of actual audio
+                        if (!sapi_is_music && strlen(sapi_text) < 16 && samples_count >= (int)(SAMPLE_RATE * 1.0f)) {
 #ifdef _WIN32
                             char temp_path[MAX_PATH];
                             GetTempPathA(MAX_PATH, temp_path);
@@ -288,10 +297,10 @@ static void *voice_reader_thread(void *lpParam) {
                         }
 
                         audio_lock();
-                        if (got_precise) {
-                            strncpy(final_speech_buf, precise_text, sizeof(final_speech_buf) - 1);
+                        if (sapi_is_music || strlen(sapi_text) >= 12 || !got_precise) {
+                            strncpy(final_speech_buf, sapi_text, sizeof(final_speech_buf) - 1);
                         } else {
-                            strncpy(final_speech_buf, line_buf + 6, sizeof(final_speech_buf) - 1);
+                            strncpy(final_speech_buf, precise_text, sizeof(final_speech_buf) - 1);
                         }
                         final_speech_buf[sizeof(final_speech_buf) - 1] = '\0';
                         final_speech_ready = 1;

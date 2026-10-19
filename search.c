@@ -973,29 +973,58 @@ int search_music_track(const char *query, MusicTrack *out_track) {
     if (!query || !out_track) return 0;
     memset(out_track, 0, sizeof(MusicTrack));
 
-    // Strip conversational prefixes: "play ", "play song ", "play me ", etc.
+    // Strip conversational prefixes and wake words
     const char *start = query;
-    while (*start && isspace((unsigned char)*start)) start++;
+    while (*start && (isspace((unsigned char)*start) || *start == '"' || *start == '\'')) start++;
 
     char lower_q[512];
     to_lower_str(start, lower_q, sizeof(lower_q));
-
     const char *p = lower_q;
-    const char *prefixes[] = {
+
+    // 1. Strip wake words with optional commas/colons (e.g. "hey sphere, ", "sphere: ")
+    const char *wake_prefixes[] = {
         "hey sphere play the song ", "hey sphere play song ", "hey sphere play me the song ", "hey sphere play me ", "hey sphere play ",
+        "hey spear play the song ", "hey spear play song ", "hey spear play ",
         "sphere play the song ", "sphere play song ", "sphere play me ", "sphere play ",
-        "can you play the song ", "can you play song ", "can you play a song ", "can you play me ", "can you play ",
-        "please play the song ", "please play song ", "please play me ", "please play ",
-        "could you play the song ", "could you play song ", "could you play ",
-        "play the song ", "play song ", "play a song ", "play me the song ", "play me ", "play track ", "play "
+        "spear play ",
+        "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
+        "hey spear", "spear"
     };
-    for (size_t i = 0; i < sizeof(prefixes)/sizeof(prefixes[0]); i++) {
-        size_t len = strlen(prefixes[i]);
-        if (strncmp(p, prefixes[i], len) == 0) {
-            start += len;
+    for (size_t w = 0; w < sizeof(wake_prefixes)/sizeof(wake_prefixes[0]); w++) {
+        size_t wlen = strlen(wake_prefixes[w]);
+        if (strncmp(p, wake_prefixes[w], wlen) == 0) {
+            start += wlen;
+            p += wlen;
+            while (*start && (isspace((unsigned char)*start) || *start == ',' || *start == ':' || *start == '-')) {
+                start++;
+                p++;
+            }
             break;
         }
     }
+
+    // 2. Strip conversational play requests
+    const char *play_prefixes[] = {
+        "can you please play the song ", "can you please play song ", "can you please play a song ", "can you please play ",
+        "could you please play the song ", "could you please play song ", "could you please play ",
+        "can you play the song ", "can you play song ", "can you play a song ", "can you play me ", "can you play ",
+        "could you play the song ", "could you play song ", "could you play ",
+        "please play the song ", "please play song ", "please play me ", "please play ",
+        "play the song ", "play song ", "play a song ", "play me the song ", "play me ", "play track ", "play some ", "play ",
+        "listen to the song ", "listen to song ", "listen to ",
+        "put on the song ", "put on song ", "put on some ", "put on ",
+        "stream the song ", "stream "
+    };
+    for (size_t i = 0; i < sizeof(play_prefixes)/sizeof(play_prefixes[0]); i++) {
+        size_t len = strlen(play_prefixes[i]);
+        if (strncmp(p, play_prefixes[i], len) == 0) {
+            start += len;
+            p += len;
+            break;
+        }
+    }
+
+    while (*start && (isspace((unsigned char)*start) || *start == '"' || *start == '\'')) start++;
 
     char clean[512];
     size_t d = 0;
@@ -1006,6 +1035,19 @@ int search_music_track(const char *query, MusicTrack *out_track) {
     clean[d] = '\0';
 
     while (d > 0 && (clean[d-1] == '?' || clean[d-1] == '.' || clean[d-1] == '!' || clean[d-1] == ' ' || clean[d-1] == '"' || clean[d-1] == '\'')) {
+        clean[--d] = '\0';
+    }
+
+    // Strip trailing polite filler: " please", " for me", " now"
+    if (d > 7 && strcasecmp(clean + d - 7, " please") == 0) {
+        clean[d - 7] = '\0';
+        d -= 7;
+    } else if (d > 8 && strcasecmp(clean + d - 8, " for me") == 0) {
+        clean[d - 8] = '\0';
+        d -= 8;
+    }
+
+    while (d > 0 && isspace((unsigned char)clean[d-1])) {
         clean[--d] = '\0';
     }
 

@@ -27,18 +27,16 @@ int agent_has_music_intent(const char *query) {
         lower[--i] = '\0';
     }
 
-    if (strncmp(lower, "play ", 5) == 0 ||
-        strstr(lower, "play the song") ||
+    if (strstr(lower, "play ") ||
+        strcmp(lower, "play") == 0 ||
         strstr(lower, "play song") ||
-        strstr(lower, "play a song") ||
         strstr(lower, "play track") ||
         strstr(lower, "play music") ||
-        strstr(lower, "play some music") ||
-        strstr(lower, "play album") ||
-        strstr(lower, "play me") ||
-        strstr(lower, "can you play") ||
-        strstr(lower, "please play") ||
-        strstr(lower, "could you play")) {
+        strstr(lower, "song ") ||
+        strstr(lower, "track ") ||
+        strstr(lower, "listen to") ||
+        strstr(lower, "put on") ||
+        strstr(lower, "stream ")) {
         return 1;
     }
     return 0;

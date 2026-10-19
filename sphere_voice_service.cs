@@ -261,9 +261,12 @@ namespace SphereVoiceEngine {
 
                     if (queryStart < text.Length) {
                         remainingQuery = text.Substring(queryStart).Trim();
-                        while (remainingQuery.Length > 0 && (remainingQuery[0] == ',' || remainingQuery[0] == '.' || remainingQuery[0] == '?' || remainingQuery[0] == ' ' || remainingQuery[0] == '!')) {
+                        while (remainingQuery.Length > 0 && (remainingQuery[0] == ',' || remainingQuery[0] == '.' || remainingQuery[0] == '?' || remainingQuery[0] == ' ' || remainingQuery[0] == '!' || remainingQuery[0] == ':')) {
                             remainingQuery = remainingQuery.Substring(1).Trim();
                         }
+                    }
+                    if (kw.Contains("play") && !remainingQuery.ToLowerInvariant().StartsWith("play")) {
+                        remainingQuery = "play " + remainingQuery;
                     }
                     return true;
                 }

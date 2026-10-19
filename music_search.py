@@ -7,12 +7,19 @@ import os
 import hashlib
 import tempfile
 
+if sys.platform == 'win32':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
 def clean_song_title(title):
     if not title:
         return "Unknown Track"
     patterns = [
-        r'\s*[\(\[\{]?(?:official\s+)?(?:music\s+)?(?:video|audio|visualizer|lyric\s+video|lyrics)[\)\]\}]?',
-        r'\s*[\(\[\{]?(?:hd|4k|remastered|explicit)[\)\]\}]?',
+        r'\s*[\(\[\{]?(?:official\s+)?(?:music\s+)?(?:video|audio|visualizer|lyric\s+video|lyrics|hd|4k|remastered|explicit)[\)\]\}]?',
+        r'\s*[\(\[\{](?:feat\.|ft\.)[^\)\]\}]+[\)\]\}]',
         r'\s*[\(\[\{]audio[\)\]\}]?',
     ]
     cleaned = title
@@ -21,11 +28,62 @@ def clean_song_title(title):
     cleaned = cleaned.strip(" -|[]()")
     return cleaned if cleaned else title
 
+def score_candidate(entry, query):
+    title = (entry.get('title') or '').lower()
+    uploader = (entry.get('uploader') or '').lower()
+    duration = int(entry.get('duration') or 0)
+
+    # Filter out clips / previews / 1-hour loops / compilations
+    if duration > 0 and (duration < 60 or duration > 600):
+        return -100
+
+    score = 50
+
+    # Strong boost for official artist release / YouTube Music Topic
+    if uploader.endswith(' - topic'):
+        score += 45
+    elif 'vevo' in uploader:
+        score += 40
+    elif 'official' in uploader:
+        score += 20
+    elif 'records' in uploader or 'music' in uploader:
+        score += 15
+
+    # Penalize non-song / spam / edit formats
+    bad_markers = [
+        '1 hour', '10 hours', 'loop', 'reaction', 'reacts', 'tutorial',
+        'lesson', 'parody', 'slowed', 'reverb', 'sped up', 'speed up',
+        'nightcore', 'bass boosted', '8d audio', 'karaoke', 'instrumental',
+        'behind the scenes', 'making of', 'teaser', 'trailer', 'mashup'
+    ]
+    for bm in bad_markers:
+        if bm in title and bm not in query.lower():
+            score -= 40
+
+    # Boost verified music formats
+    good_markers = ['official audio', 'official music video', 'official video', 'official lyric video', 'lyrics']
+    for gm in good_markers:
+        if gm in title:
+            score += 15
+            break
+
+    # Query keyword match
+    q_words = re.findall(r'\w+', query.lower())
+    for w in q_words:
+        if len(w) > 2 and (w in title or w in uploader):
+            score += 12
+
+    # Standard song duration bonus (2 to 5 minutes)
+    if 120 <= duration <= 320:
+        score += 10
+
+    return score
+
 def search_full_song(query):
     # Check local cache first for instant playback
     cache_dir = os.path.join(tempfile.gettempdir(), 'sphere_music_cache')
     os.makedirs(cache_dir, exist_ok=True)
-    
+
     q_norm = query.lower().strip()
     q_hash = hashlib.md5(q_norm.encode('utf-8')).hexdigest()
     cache_meta = os.path.join(cache_dir, f"{q_hash}.json")
@@ -41,7 +99,12 @@ def search_full_song(query):
         except Exception:
             pass
 
-    # Try yt_dlp for the direct full-length audio stream
+    # Clean query for search: strip conversational filler
+    clean_q = re.sub(r'^(?:can\s+you\s+|please\s+|could\s+you\s+)?(?:play\s+(?:the\s+song\s+|a\s+song\s+|song\s+|track\s+|me\s+)?)+', '', query, flags=re.IGNORECASE).strip()
+    if not clean_q or clean_q.lower() in ('music', 'some music', 'a song'):
+        clean_q = "Blinding Lights The Weeknd"
+
+    # Step 1: Search YouTube with smart candidate scoring for the exact official song
     try:
         import yt_dlp
         ydl_opts = {
@@ -52,31 +115,36 @@ def search_full_song(query):
             'default_search': 'ytsearch',
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            search_term = f"ytsearch1:{query} audio"
+            # Query directly with top 5 results to pick the official release
+            search_term = f"ytsearch5:{clean_q}"
             info = ydl.extract_info(search_term, download=False)
-            entry = None
-            if info:
-                if 'entries' in info and len(info['entries']) > 0:
-                    entry = info['entries'][0]
-                else:
-                    entry = info
+            entries = info.get('entries', []) if info else []
 
-            if entry and entry.get('url'):
-                raw_title = entry.get('title', query)
+            if entries:
+                scored = []
+                for e in entries:
+                    if e and e.get('url'):
+                        s = score_candidate(e, clean_q)
+                        scored.append((s, e))
+
+                scored.sort(key=lambda x: x[0], reverse=True)
+                best_entry = scored[0][1] if scored else entries[0]
+
+                raw_title = best_entry.get('title', clean_q)
                 clean_t = clean_song_title(raw_title)
-                artist = entry.get('artist')
+                artist = best_entry.get('artist')
                 if not artist or artist == "Unknown":
                     if " - " in clean_t:
                         parts = clean_t.split(" - ", 1)
                         artist = parts[0].strip()
                         clean_t = parts[1].strip()
                     else:
-                        uploader = entry.get('uploader') or ""
+                        uploader = best_entry.get('uploader') or ""
                         uploader = re.sub(r'\s*-\s*Topic$', '', uploader, flags=re.IGNORECASE).strip()
                         artist = uploader if uploader else "Featured Artist"
 
-                duration = int(entry.get('duration') or 0)
-                play_url = entry.get('url', '')
+                duration = int(best_entry.get('duration') or 0)
+                play_url = best_entry.get('url', '')
 
                 result = {
                     'found': True,
@@ -93,12 +161,12 @@ def search_full_song(query):
                     pass
 
                 return result
-    except Exception as e:
+    except Exception:
         pass
 
-    # Fallback: iTunes API preview
+    # Step 2: Fallback to iTunes API
     try:
-        enc = urllib.parse.quote(query)
+        enc = urllib.parse.quote(clean_q)
         req = urllib.request.Request(
             f"https://itunes.apple.com/search?term={enc}&entity=song&limit=1",
             headers={'User-Agent': 'Mozilla/5.0'}
@@ -109,7 +177,7 @@ def search_full_song(query):
                 result = data['results'][0]
                 return {
                     'found': True,
-                    'track_name': result.get('trackName', query),
+                    'track_name': result.get('trackName', clean_q),
                     'artist_name': result.get('artistName', 'Featured Artist'),
                     'url': result.get('previewUrl', ''),
                     'duration': 30
