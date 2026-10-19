@@ -45,6 +45,22 @@ A fast, lightweight, native C voice assistant and 3D ANSI Braille visualizer. Ru
 
 Recommended terminal: **Windows Terminal** (or standard PowerShell with a TrueType font like Cascadia Code, Consolas, or JetBrains Mono).
 
+#### Automated One-Click Setup (Recommended)
+Run the automated installation script directly in PowerShell. It detects GCC and .NET compilers, installs Python dependencies (`requests`, `yt-dlp`, `speechrecognition`), optionally pulls the small AI model (`qwen2.5:0.5b`), and compiles standalone executables (`sphere_voice_service.exe` and `sphere_ai.exe`):
+
+```powershell
+# In PowerShell:
+.\install_windows.bat
+```
+
+Once finished, launch SphereAI anytime:
+```powershell
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+.\sphere_ai.exe
+```
+*(Or simply run `.\run_sphere.bat`)*
+
+#### Manual Build
 ```powershell
 # 1. Open PowerShell in the sphere directory
 cd c:\path\to\sphere
