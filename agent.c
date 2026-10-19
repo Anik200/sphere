@@ -125,11 +125,13 @@ static int query_sphere_ai_model(const char *query, const char *context, char *o
     }
 
     const char *py_bin = "python";
-    if (system("python --version >nul 2>&1") != 0) {
-        if (system("py -3 --version >nul 2>&1") == 0) {
-            py_bin = "py -3";
-        }
+    static const char *s_agent_py = NULL;
+    if (!s_agent_py) {
+        if (system("python --version >nul 2>&1") == 0) s_agent_py = "python";
+        else if (system("py -3 --version >nul 2>&1") == 0) s_agent_py = "py -3";
+        else s_agent_py = "python";
     }
+    py_bin = s_agent_py;
 
     char py_cmd[MAX_PATH * 4];
     if (context && strlen(context) > 0) {

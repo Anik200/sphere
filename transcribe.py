@@ -1,26 +1,60 @@
 import sys
+import os
+import locale
 import speech_recognition as sr
 
+def get_locale_language():
+    try:
+        loc = locale.getlocale()[0] or ""
+    except Exception:
+        loc = ""
+    if not loc:
+        try:
+            loc = locale.getdefaultlocale()[0] or ""
+        except Exception:
+            loc = ""
+    loc_upper = loc.upper()
+    if "IN" in loc_upper:
+        return "en-IN"
+    if "GB" in loc_upper or "UK" in loc_upper:
+        return "en-GB"
+    if "AU" in loc_upper:
+        return "en-AU"
+    if "CA" in loc_upper:
+        return "en-CA"
+    return "en-US"
+
 def transcribe_wav(wav_path):
+    if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1000:
+        return ""
     r = sr.Recognizer()
-    r.dynamic_energy_threshold = True
-    r.energy_threshold = 150
+    r.dynamic_energy_threshold = False
+    r.energy_threshold = 50
+
     try:
         with sr.AudioFile(wav_path) as source:
-            try:
-                r.adjust_for_ambient_noise(source, duration=0.25)
-            except Exception:
-                pass
             audio = r.record(source)
-        try:
-            return r.recognize_google(audio, language="en-US").strip()
-        except Exception:
-            pass
+
+        primary = get_locale_language()
+        lang_order = [primary]
+        for l in ["en-IN", "en-US", "en-GB"]:
+            if l not in lang_order:
+                lang_order.append(l)
+
+        for lang in lang_order:
+            try:
+                text = r.recognize_google(audio, language=lang).strip()
+                if text and len(text) > 0:
+                    return text
+            except sr.UnknownValueError:
+                continue
+            except Exception:
+                break
+
         try:
             return r.recognize_google(audio).strip()
         except Exception:
-            pass
-        return ""
+            return ""
     except Exception:
         return ""
 

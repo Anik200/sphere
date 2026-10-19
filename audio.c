@@ -677,11 +677,13 @@ static void *voice_reader_thread(void *lpParam) {
                             }
 
                             const char *py_bin = "python";
-                            if (system("python --version >nul 2>&1") != 0) {
-                                if (system("py -3 --version >nul 2>&1") == 0) {
-                                    py_bin = "py -3";
-                                }
+                            static const char *s_py = NULL;
+                            if (!s_py) {
+                                if (system("python --version >nul 2>&1") == 0) s_py = "python";
+                                else if (system("py -3 --version >nul 2>&1") == 0) s_py = "py -3";
+                                else s_py = "python";
                             }
+                            py_bin = s_py;
 
                             char cmd[MAX_PATH * 3];
                             snprintf(cmd, sizeof(cmd), "%s \"%s\" \"%s\" \"%s\"", py_bin, transcribe_path, target_wav, res_file);
@@ -870,30 +872,30 @@ int audio_init(void) {
     CloseHandle(hChildStd_OUT_Wr);
     CloseHandle(hChildStd_IN_Rd);
 
-    if (!success) {
-        WAVEFORMATEX pFormat;
-        pFormat.wFormatTag = WAVE_FORMAT_PCM;
-        pFormat.nChannels = 1;
-        pFormat.nSamplesPerSec = SAMPLE_RATE;
-        pFormat.wBitsPerSample = 16;
-        pFormat.nBlockAlign = 2;
-        pFormat.nAvgBytesPerSec = SAMPLE_RATE * 2;
-        pFormat.cbSize = 0;
+    WAVEFORMATEX pFormat;
+    pFormat.wFormatTag = WAVE_FORMAT_PCM;
+    pFormat.nChannels = 1;
+    pFormat.nSamplesPerSec = SAMPLE_RATE;
+    pFormat.wBitsPerSample = 16;
+    pFormat.nBlockAlign = 2;
+    pFormat.nAvgBytesPerSec = SAMPLE_RATE * 2;
+    pFormat.cbSize = 0;
 
-        MMRESULT res = waveInOpen(&hWaveIn, WAVE_MAPPER, &pFormat, (DWORD_PTR)waveInProc, 0, CALLBACK_FUNCTION);
-        if (res == MMSYSERR_NOERROR) {
-            for (int i = 0; i < 2; i++) {
-                memset(&waveHeaders[i], 0, sizeof(WAVEHDR));
-                waveHeaders[i].lpData = (LPSTR)audio_buffers[i];
-                waveHeaders[i].dwBufferLength = sizeof(audio_buffers[i]);
-                waveInPrepareHeader(hWaveIn, &waveHeaders[i], sizeof(WAVEHDR));
-                waveInAddBuffer(hWaveIn, &waveHeaders[i], sizeof(WAVEHDR));
-            }
-            waveInStart(hWaveIn);
-        } else {
-            hWaveIn = NULL;
+    MMRESULT res = waveInOpen(&hWaveIn, WAVE_MAPPER, &pFormat, (DWORD_PTR)waveInProc, 0, CALLBACK_FUNCTION);
+    if (res == MMSYSERR_NOERROR) {
+        for (int i = 0; i < 2; i++) {
+            memset(&waveHeaders[i], 0, sizeof(WAVEHDR));
+            waveHeaders[i].lpData = (LPSTR)audio_buffers[i];
+            waveHeaders[i].dwBufferLength = sizeof(audio_buffers[i]);
+            waveInPrepareHeader(hWaveIn, &waveHeaders[i], sizeof(WAVEHDR));
+            waveInAddBuffer(hWaveIn, &waveHeaders[i], sizeof(WAVEHDR));
         }
+        waveInStart(hWaveIn);
+    } else {
+        hWaveIn = NULL;
+    }
 
+    if (!success) {
         CloseHandle(hChildStd_OUT_Rd);
         CloseHandle(hChildStd_IN_Wr);
         hChildStd_OUT_Rd = NULL;
@@ -972,7 +974,7 @@ void audio_set_standby_mode(void) {
 void audio_set_listening_mode(void) {
     audio_lock();
     if (!is_recording_query) {
-        num_recorded_samples = preroll_copy_to(recorded_samples, MAX_RECORDED_SAMPLES, (int)(SAMPLE_RATE * 0.5f));
+        num_recorded_samples = preroll_copy_to(recorded_samples, MAX_RECORDED_SAMPLES, (int)(SAMPLE_RATE * 0.8f));
         is_recording_query = 1;
     }
     audio_unlock();
