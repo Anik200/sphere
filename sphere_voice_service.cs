@@ -32,8 +32,33 @@ namespace SphereVoiceEngine {
         static string currentSpeakingText = "";
 
         static dynamic mediaPlayer = null;
+        static Process musicProcess = null;
+        static string ffplayPath = null;
         static bool isMusicPlaying = false;
         static Thread musicMonitorThread = null;
+
+        static string FindFfplay() {
+            try {
+                string pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
+                string[] paths = pathEnv.Split(';');
+                foreach (string p in paths) {
+                    if (string.IsNullOrWhiteSpace(p)) continue;
+                    try {
+                        string full = Path.Combine(p.Trim(), "ffplay.exe");
+                        if (File.Exists(full)) return full;
+                    } catch { }
+                }
+                string localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                if (!string.IsNullOrEmpty(localApp)) {
+                    string wingetDir = Path.Combine(localApp, "Microsoft", "WinGet", "Packages");
+                    if (Directory.Exists(wingetDir)) {
+                        string[] matches = Directory.GetFiles(wingetDir, "ffplay.exe", SearchOption.AllDirectories);
+                        if (matches.Length > 0) return matches[0];
+                    }
+                }
+            } catch { }
+            return null;
+        }
 
         static readonly Regex ExitWordRegex = new Regex(
             @"^(exit|quit|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later|close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shut\s+down|shutdown|terminate)$",
@@ -44,7 +69,7 @@ namespace SphereVoiceEngine {
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex BargeInStopRegex = new Regex(
-            @"^(hey\s+sphere\s+|sphere\s+)?(stop|be\s+quiet|shut\s+up|pause|cancel|stop\s+talking|stop\s+it|stop\s+music|stop\s+the\s+music)$",
+            @"^(hey\s+sphere\s+|sphere\s+|hi\s+sphere\s+|hello\s+sphere\s+|hey\s+spear\s+|spear\s+)?(stop|be\s+quiet|shut\s+up|pause|cancel|stop\s+talking|stop\s+it|stop\s+music|stop\s+the\s+music|stop\s+playing|pause\s+music|pause\s+song|stop\s+song|quiet|silence|enough|halt|skip|next)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex BargeInWakeRegex = new Regex(
@@ -109,11 +134,15 @@ namespace SphereVoiceEngine {
                 }
 
                 sre.SetInputToDefaultAudioDevice();
+                try {
+                    sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(150);
+                    sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(250);
+                } catch { }
 
                 // 1. Wake Grammar (Expanded with phonetic variations: spear, fear, spare, okay sphere, wake up, etc.)
                 Choices wakeChoices = new Choices(new string[] {
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
-                    "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
+                    "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay sphere",
                     "hey fear", "hi fear", "hello fear", "her sphere", "here sphere", "hear sphere",
                     "hey spare", "the sphere", "a sphere", "hay sphere", "ay sphere",
                     "wake up", "wake up sphere",
@@ -152,11 +181,18 @@ namespace SphereVoiceEngine {
 
                 // 4. Interrupt Grammar (Barge-in while speaking or playing music)
                 Choices interruptChoices = new Choices(new string[] {
-                    "stop", "be quiet", "shut up", "pause", "cancel", "stop talking", "stop it", "stop music", "stop the music",
+                    "stop", "stop it", "stop music", "stop the music", "stop song", "stop playing", "stop talking",
+                    "pause", "pause music", "pause the music", "pause song",
+                    "be quiet", "quiet", "shut up", "silence", "enough", "cancel", "halt", "skip", "next",
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                     "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
-                    "exit", "quit", "goodbye", "good bye", "bye", "bye bye", "see you later", "close app", "close the app", "exit app", "exit the app", "quit app",
-                    "hey sphere stop", "sphere stop", "hey sphere shut up", "hey sphere pause", "hey sphere be quiet", "hey sphere cancel",
+                    "hey fear", "hi fear", "her sphere", "here sphere", "wake up sphere", "wake up",
+                    "hey sphere stop", "sphere stop", "hey sphere shut up", "sphere shut up",
+                    "hey sphere pause", "sphere pause", "hey sphere be quiet", "sphere be quiet",
+                    "hey sphere quiet", "sphere quiet", "hey sphere cancel", "sphere cancel",
+                    "hey sphere stop music", "sphere stop music", "hey sphere pause music", "sphere pause music",
+                    "exit", "quit", "goodbye", "good bye", "bye", "bye bye", "see you later",
+                    "close app", "close the app", "exit app", "exit the app", "quit app", "shut down", "shutdown",
                     "hey sphere exit", "sphere exit", "hey sphere quit", "sphere quit", "hey sphere goodbye"
                 });
                 GrammarBuilder intGb = new GrammarBuilder(interruptChoices);
@@ -239,9 +275,57 @@ namespace SphereVoiceEngine {
             try {
                 StopMusic();
                 try { synth.SpeakAsyncCancelAll(); } catch { }
+
+                if (string.IsNullOrEmpty(ffplayPath)) {
+                    ffplayPath = FindFfplay();
+                }
+
+                if (!string.IsNullOrEmpty(ffplayPath) && File.Exists(ffplayPath)) {
+                    ProcessStartInfo psi = new ProcessStartInfo {
+                        FileName = ffplayPath,
+                        Arguments = "-nodisp -autoexit -loglevel quiet -volume 85 \"" + url + "\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    };
+                    musicProcess = Process.Start(psi);
+                    isMusicPlaying = true;
+                    SetMode(ServiceMode.Speaking);
+
+                    if (musicMonitorThread == null || !musicMonitorThread.IsAlive) {
+                        musicMonitorThread = new Thread(() => {
+                            float phase = 0f;
+                            while (isMusicPlaying) {
+                                Thread.Sleep(60);
+                                if (musicProcess != null) {
+                                    if (musicProcess.HasExited) {
+                                        isMusicPlaying = false;
+                                        Console.WriteLine("MUSIC_DONE");
+                                        Console.Out.Flush();
+                                        SetMode(ServiceMode.Standby);
+                                        break;
+                                    }
+                                    phase += 0.22f;
+                                    float beat = (float)Math.Abs(Math.Sin(phase)) * 0.40f;
+                                    if (Math.Sin(phase * 2.3) > 0.55) beat += 0.25f;
+                                    Console.WriteLine("AMP:" + beat.ToString("0.00", CultureInfo.InvariantCulture));
+                                    Console.Out.Flush();
+                                }
+                            }
+                        });
+                        musicMonitorThread.IsBackground = true;
+                        musicMonitorThread.Start();
+                    }
+                    Console.WriteLine("MUSIC_STARTED");
+                    Console.Out.Flush();
+                    return;
+                }
+
+                // Fallback: Windows Media Player ActiveX
                 Type wmpType = Type.GetTypeFromProgID("WMPlayer.OCX");
                 if (wmpType == null) {
-                    Console.WriteLine("ERROR:WMP_NOT_FOUND");
+                    Console.WriteLine("ERROR:NO_PLAYER_FOUND");
+                    Console.WriteLine("MUSIC_DONE");
                     Console.Out.Flush();
                     return;
                 }
@@ -256,8 +340,9 @@ namespace SphereVoiceEngine {
                     musicMonitorThread = new Thread(() => {
                         bool hasStarted = false;
                         int stoppedCount = 0;
+                        float phase = 0f;
                         while (isMusicPlaying) {
-                            Thread.Sleep(250);
+                            Thread.Sleep(80);
                             try {
                                 if (mediaPlayer != null) {
                                     int state = (int)mediaPlayer.playState;
@@ -265,6 +350,11 @@ namespace SphereVoiceEngine {
                                     if (state == 3 || state == 6 || state == 9 || state == 10) {
                                         hasStarted = true;
                                         stoppedCount = 0;
+                                        phase += 0.22f;
+                                        float beat = (float)Math.Abs(Math.Sin(phase)) * 0.40f;
+                                        if (Math.Sin(phase * 2.3) > 0.55) beat += 0.25f;
+                                        Console.WriteLine("AMP:" + beat.ToString("0.00", CultureInfo.InvariantCulture));
+                                        Console.Out.Flush();
                                     } else if (state == 8) {
                                         // 8 = MediaEnded
                                         isMusicPlaying = false;
@@ -273,7 +363,6 @@ namespace SphereVoiceEngine {
                                         SetMode(ServiceMode.Standby);
                                         break;
                                     } else if (hasStarted && state == 1) {
-                                        // Require consecutive stopped checks so transient buffer pauses don't abort song
                                         stoppedCount++;
                                         if (stoppedCount >= 4) { // 1 second of confirmed stop
                                             isMusicPlaying = false;
@@ -298,6 +387,7 @@ namespace SphereVoiceEngine {
                 Console.Out.Flush();
             } catch (Exception ex) {
                 Console.WriteLine("ERROR:PLAY_MUSIC:" + ex.Message);
+                Console.WriteLine("MUSIC_DONE");
                 Console.Out.Flush();
                 isMusicPlaying = false;
             }
@@ -305,6 +395,15 @@ namespace SphereVoiceEngine {
 
         static void StopMusic() {
             isMusicPlaying = false;
+            if (musicProcess != null) {
+                try {
+                    if (!musicProcess.HasExited) {
+                        musicProcess.Kill();
+                        musicProcess.WaitForExit(300);
+                    }
+                } catch { }
+                musicProcess = null;
+            }
             if (mediaPlayer != null) {
                 try {
                     mediaPlayer.controls.stop();
@@ -397,6 +496,8 @@ namespace SphereVoiceEngine {
                     PlayMusic(musicUrl);
                 } else if (line.Equals("CMD:STOP_MUSIC", StringComparison.OrdinalIgnoreCase)) {
                     StopMusic();
+                    Console.WriteLine("MUSIC_DONE");
+                    Console.Out.Flush();
                     SetMode(ServiceMode.Standby);
                 } else if (line.Equals("CMD:EXIT", StringComparison.OrdinalIgnoreCase)) {
                     StopMusic();
@@ -438,9 +539,43 @@ namespace SphereVoiceEngine {
 
             lock (modeLock) {
                 if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
-                    // Never interrupt speech or music on tentative hypotheses!
-                    // Waiting for high-confidence Sre_SpeechRecognized ensures speaker echo
-                    // or music vocals never cause speech cutoffs or ghost exits.
+                    // Fast barge-in interruption: SAPI InterruptGrammar is tightly constrained to ~30 words.
+                    // Hypothesized match stops music and speech in <80ms without waiting for music silence!
+                    bool isHypStop = BargeInStopRegex.IsMatch(hypText);
+                    bool isHypExit = IsExitPhrase(hypText) || BargeInExitRegex.IsMatch(hypText);
+                    string hypWakeQuery = null;
+                    bool isHypWake = BargeInWakeRegex.IsMatch(hypText) || IsWakePhrase(hypText, out hypWakeQuery);
+
+                    if (isHypStop || isHypExit || isHypWake) {
+                        try { synth.SpeakAsyncCancelAll(); } catch { }
+                        StopMusic();
+
+                        if (isHypExit) {
+                            Console.WriteLine("EXIT");
+                            Console.Out.Flush();
+                            return;
+                        }
+
+                        if (isHypStop) {
+                            Console.WriteLine("INTERRUPTED:" + hypText);
+                            Console.Out.Flush();
+                            SetMode(ServiceMode.Standby);
+                            return;
+                        }
+
+                        if (isHypWake) {
+                            Console.WriteLine("INTERRUPTED:" + hypText);
+                            Console.WriteLine("WAKE");
+                            if (!string.IsNullOrEmpty(hypWakeQuery)) {
+                                Console.WriteLine("FINAL:" + hypWakeQuery);
+                                SetMode(ServiceMode.Standby);
+                            } else {
+                                SetMode(ServiceMode.Listening);
+                            }
+                            Console.Out.Flush();
+                            return;
+                        }
+                    }
                     return;
                 }
 
@@ -494,8 +629,8 @@ namespace SphereVoiceEngine {
 
             lock (modeLock) {
                 if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
-                    // Require confidence >= 0.35f to avoid echo while speaking/playing music
-                    if (e.Result.Confidence < 0.35f) {
+                    // Threshold 0.18f: mic picks up speakers during playback, constrained grammar guarantees safety
+                    if (e.Result.Confidence < 0.18f) {
                         return;
                     }
 

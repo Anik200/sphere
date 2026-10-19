@@ -10,7 +10,7 @@ ifeq ($(OS),Windows_NT)
 all: $(VOICE_SERVICE) $(TARGET)
 
 $(VOICE_SERVICE): sphere_voice_service.cs
-	-$(CSC) /optimize+ /reference:$(SPEECH_DLL) /out:$(VOICE_SERVICE) sphere_voice_service.cs 2>nul || true
+	-$(CSC) /optimize+ /reference:$(SPEECH_DLL) /out:$(VOICE_SERVICE) sphere_voice_service.cs
 
 else
     CC ?= gcc

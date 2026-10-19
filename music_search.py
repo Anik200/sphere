@@ -41,19 +41,19 @@ def search_full_song(query):
         except Exception:
             pass
 
-    # Try yt_dlp for the direct full-length audio stream or cached download
+    # Try yt_dlp for the direct full-length audio stream
     try:
         import yt_dlp
         ydl_opts = {
-            'format': '140/ba[ext=m4a]/bestaudio[ext=m4a]/ba/b',
+            'format': 'ba[ext=m4a]/140/bestaudio[ext=m4a]/ba/bestaudio/b',
             'noplaylist': True,
             'quiet': True,
             'no_warnings': True,
-            'outtmpl': cache_audio,
+            'default_search': 'ytsearch',
         }
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             search_term = f"ytsearch1:{query} audio"
-            info = ydl.extract_info(search_term, download=True)
+            info = ydl.extract_info(search_term, download=False)
             entry = None
             if info:
                 if 'entries' in info and len(info['entries']) > 0:
@@ -61,7 +61,7 @@ def search_full_song(query):
                 else:
                     entry = info
 
-            if entry:
+            if entry and entry.get('url'):
                 raw_title = entry.get('title', query)
                 clean_t = clean_song_title(raw_title)
                 artist = entry.get('artist')
@@ -76,10 +76,8 @@ def search_full_song(query):
                         artist = uploader if uploader else "Featured Artist"
 
                 duration = int(entry.get('duration') or 0)
-                
-                # Determine play URL: prefer local cached file if downloaded, else direct URL
-                play_url = cache_audio if (os.path.exists(cache_audio) and os.path.getsize(cache_audio) > 100000) else entry.get('url', '')
-                
+                play_url = entry.get('url', '')
+
                 result = {
                     'found': True,
                     'track_name': clean_t,
@@ -87,13 +85,13 @@ def search_full_song(query):
                     'url': play_url,
                     'duration': duration
                 }
-                
+
                 try:
                     with open(cache_meta, "w", encoding="utf-8") as mf:
                         json.dump(result, mf, ensure_ascii=False)
                 except Exception:
                     pass
-                    
+
                 return result
     except Exception as e:
         pass

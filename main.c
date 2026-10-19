@@ -286,6 +286,7 @@ static void handle_user_query(const char *raw_query) {
                 if (audio_check_exit_detected()) { handle_exit(); return; }
                 int wake_retrigger = 0;
                 if (audio_check_interrupted(&wake_retrigger)) {
+                    audio_stop_speech();
                     if (wake_retrigger) {
                         renderer_set_state(STATE_LISTENING);
                         renderer_set_status("Awake! Listening to your voice... (Speak now)");
@@ -295,12 +296,21 @@ static void handle_user_query(const char *raw_query) {
                     }
                     audio_set_standby_mode();
                     renderer_set_state(STATE_IDLE);
+                    renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
+                    renderer_set_subtitle("Say \"Hey Sphere\" or type to wake me up!");
                     return;
                 }
                 if (_kbhit()) {
                     int c = _getch();
                     if (c == 27 || c == 'q' || c == 'Q') { handle_exit(); return; }
                     audio_stop_speech();
+                    if (c == ' ' || c == 10 || c == 13 || c == 'w' || c == 'W') {
+                        renderer_set_state(STATE_LISTENING);
+                        renderer_set_status("Awake! Listening to your voice... (Speak now)");
+                        renderer_set_subtitle("Listening...");
+                        audio_set_listening_mode();
+                        return;
+                    }
                     break;
                 }
                 platform_sleep(20);
@@ -334,12 +344,23 @@ static void handle_user_query(const char *raw_query) {
                         audio_set_listening_mode();
                         return;
                     }
-                    break;
+                    audio_set_standby_mode();
+                    renderer_set_state(STATE_IDLE);
+                    renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
+                    renderer_set_subtitle("Music stopped. Say \"Hey Sphere\" to wake me up.");
+                    return;
                 }
                 if (_kbhit()) {
                     int c = _getch();
                     if (c == 27 || c == 'q' || c == 'Q') { handle_exit(); return; }
                     audio_stop_music();
+                    if (c == ' ' || c == 10 || c == 13 || c == 'w' || c == 'W') {
+                        renderer_set_state(STATE_LISTENING);
+                        renderer_set_status("Awake! Listening to your voice... (Speak now)");
+                        renderer_set_subtitle("Listening...");
+                        audio_set_listening_mode();
+                        return;
+                    }
                     break;
                 }
                 platform_sleep(25);

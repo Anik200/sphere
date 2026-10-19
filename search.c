@@ -1009,7 +1009,7 @@ int search_music_track(const char *query, MusicTrack *out_track) {
         clean[--d] = '\0';
     }
 
-    if (d == 0) {
+    if (d == 0 || strcasecmp(clean, "music") == 0 || strcasecmp(clean, "some music") == 0 || strcasecmp(clean, "a song") == 0) {
         strncpy(clean, "Blinding Lights The Weeknd", sizeof(clean) - 1);
         clean[sizeof(clean) - 1] = '\0';
     }
@@ -1045,7 +1045,10 @@ int search_music_track(const char *query, MusicTrack *out_track) {
     si.wShowWindow = SW_HIDE;
 
     if (CreateProcessA(NULL, py_cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        WaitForSingleObject(pi.hProcess, 15000);
+        DWORD wr = WaitForSingleObject(pi.hProcess, 25000);
+        if (wr == WAIT_TIMEOUT) {
+            TerminateProcess(pi.hProcess, 1);
+        }
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
     }

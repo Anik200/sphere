@@ -431,6 +431,7 @@ def main():
 
         elif line == "CMD:STOP_MUSIC":
             stop_music()
+            emit("MUSIC_DONE")
             set_mode("STANDBY")
 
         elif line == "CMD:EXIT":
