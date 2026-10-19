@@ -292,11 +292,11 @@ namespace SphereVoiceEngine {
         }
 
         static readonly Regex ExitWordRegex = new Regex(
-            @"^(exit|quit|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later|close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shut\s+down|shutdown|terminate)$",
+            @"^(close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shutdown\s+sphere|shut\s+down\s+sphere|terminate\s+sphere)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex ExitWakeRegex = new Regex(
-            @"^(hey\s+sphere|sphere|her\s+sphere|hi\s+sphere|hello\s+sphere)\s+(exit|quit|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later|close\s+app|close\s+the\s+app|shutdown|shut\s+down)$",
+            @"^(hey\s+sphere|sphere|her\s+sphere|hi\s+sphere|hello\s+sphere)\s+(close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shutdown\s+sphere|shut\s+down\s+sphere|terminate\s+sphere)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex BargeInStopRegex = new Regex(
@@ -308,21 +308,73 @@ namespace SphereVoiceEngine {
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex BargeInExitRegex = new Regex(
-            @"^(hey\s+sphere\s+|sphere\s+)?(exit|quit|close\s+app|close\s+the\s+app|shut\s+down|shutdown|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later)$",
+            @"^(hey\s+sphere\s+|sphere\s+)?(close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shutdown\s+sphere|shut\s+down\s+sphere|terminate\s+sphere)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        static readonly System.Collections.Generic.List<byte> accumulatedListeningPcm = new System.Collections.Generic.List<byte>();
+        static readonly object pcmLock = new object();
+        static string accumulatedListeningText = "";
+
+        static void WritePcmToWav(string filePath, byte[] pcmData, int sampleRate, short channels, short bitsPerSample) {
+            try {
+                using (FileStream fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite))
+                using (BinaryWriter bw = new BinaryWriter(fs)) {
+                    int byteRate = sampleRate * channels * (bitsPerSample / 8);
+                    short blockAlign = (short)(channels * (bitsPerSample / 8));
+                    int subChunk2Size = pcmData.Length;
+                    int chunkSize = 36 + subChunk2Size;
+
+                    bw.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
+                    bw.Write(chunkSize);
+                    bw.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+
+                    bw.Write(System.Text.Encoding.ASCII.GetBytes("fmt "));
+                    bw.Write(16);
+                    bw.Write((short)1); // PCM
+                    bw.Write(channels);
+                    bw.Write(sampleRate);
+                    bw.Write(byteRate);
+                    bw.Write(blockAlign);
+                    bw.Write(bitsPerSample);
+
+                    bw.Write(System.Text.Encoding.ASCII.GetBytes("data"));
+                    bw.Write(subChunk2Size);
+                    bw.Write(pcmData);
+                }
+            } catch { }
+        }
+
+        static void SaveAccumulatedAudio() {
+            try {
+                byte[] pcm;
+                lock (pcmLock) {
+                    pcm = accumulatedListeningPcm.ToArray();
+                }
+                string tempPath = Path.GetTempPath();
+                string queryPath = Path.Combine(tempPath, "sphere_query.wav");
+                string srePath = Path.Combine(tempPath, "sphere_sre_audio.wav");
+
+                if (pcm != null && pcm.Length >= 1600) {
+                    WritePcmToWav(queryPath, pcm, 16000, 1, 16);
+                    try { File.Copy(queryPath, srePath, true); } catch { }
+                }
+            } catch { }
+        }
 
         static void SaveAudioIfAvailable(RecognitionResult result) {
             if (result == null || result.Audio == null) return;
             try {
-                string tempPath = Path.GetTempPath();
-                string srePath = Path.Combine(tempPath, "sphere_sre_audio.wav");
-                string queryPath = Path.Combine(tempPath, "sphere_query.wav");
-                using (FileStream fs = new FileStream(srePath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite)) {
-                    result.Audio.WriteToWaveStream(fs);
+                using (MemoryStream ms = new MemoryStream()) {
+                    result.Audio.WriteToWaveStream(ms);
+                    byte[] wav = ms.ToArray();
+                    if (wav.Length > 44) {
+                        byte[] pcm = new byte[wav.Length - 44];
+                        Array.Copy(wav, 44, pcm, 0, pcm.Length);
+                        lock (pcmLock) {
+                            accumulatedListeningPcm.AddRange(pcm);
+                        }
+                    }
                 }
-                try {
-                    File.Copy(srePath, queryPath, true);
-                } catch { }
             } catch { }
         }
 
@@ -436,8 +488,8 @@ namespace SphereVoiceEngine {
                 }
 
                 try {
-                    sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(1600);
-                    sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(1900);
+                    sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(2200);
+                    sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(2600);
                     sre.InitialSilenceTimeout = TimeSpan.FromSeconds(8.0);
                 } catch { }
 
@@ -448,10 +500,9 @@ namespace SphereVoiceEngine {
                     "hey fear", "hi fear", "hello fear", "her sphere", "here sphere", "hear sphere",
                     "hey spare", "the sphere", "a sphere", "hay sphere", "ay sphere", "hey siri", "hey sir",
                     "wake up", "wake up sphere",
-                    "stop", "exit", "quit", "goodbye", "good bye", "bye", "bye bye", "shutdown", "shut down",
-                    "close app", "exit app", "quit app", "see you later",
-                    "hey sphere exit", "sphere exit", "hey sphere close", "sphere close",
-                    "hey sphere quit", "sphere quit", "hey sphere bye", "sphere bye",
+                    "stop", "be quiet", "shut up", "pause", "cancel",
+                    "close app", "close the app", "exit app", "exit the app", "quit app",
+                    "hey sphere exit app", "sphere exit app", "hey sphere close app", "sphere close app",
                     "play", "play song", "play music", "hey sphere play", "sphere play"
                 });
                 GrammarBuilder wakeGb = new GrammarBuilder(wakeChoices);
@@ -526,21 +577,28 @@ namespace SphereVoiceEngine {
                         if (currentMode == ServiceMode.Listening) {
                             TimeSpan elapsed = DateTime.UtcNow - wakeStartTime;
                             TimeSpan silence = DateTime.UtcNow - lastSpeechTime;
-                            if (speechHeardInListening && silence.TotalMilliseconds >= 1600 && !string.IsNullOrWhiteSpace(lastHypothesizedText)) {
-                                string finalQuery = StripWakePrefix(lastHypothesizedText);
-                                if (!string.IsNullOrWhiteSpace(finalQuery) && !IsWakeOnlyWord(finalQuery) && finalQuery.Length >= 2) {
-                                    Console.WriteLine("FINAL:" + finalQuery);
+
+                            string bestText = !string.IsNullOrWhiteSpace(accumulatedListeningText) ? accumulatedListeningText : lastHypothesizedText;
+                            bestText = StripWakePrefix(bestText);
+
+                            if (speechHeardInListening && silence.TotalMilliseconds >= 1700 && !string.IsNullOrWhiteSpace(bestText) && !IsWakeOnlyWord(bestText) && bestText.Length >= 2) {
+                                SaveAccumulatedAudio();
+                                Console.WriteLine("FINAL:" + bestText);
+                                Console.Out.Flush();
+                                accumulatedListeningText = "";
+                                lastHypothesizedText = "";
+                                SetMode(ServiceMode.Standby);
+                            } else if (elapsed.TotalSeconds > 8.5) {
+                                if (speechHeardInListening && !string.IsNullOrWhiteSpace(bestText) && !IsWakeOnlyWord(bestText) && bestText.Length >= 2) {
+                                    SaveAccumulatedAudio();
+                                    Console.WriteLine("FINAL:" + bestText);
                                     Console.Out.Flush();
-                                    lastHypothesizedText = "";
-                                    SetMode(ServiceMode.Standby);
-                                } else if (elapsed.TotalSeconds > 8.0) {
+                                } else {
                                     Console.WriteLine("TIMEOUT");
                                     Console.Out.Flush();
-                                    SetMode(ServiceMode.Standby);
                                 }
-                            } else if (elapsed.TotalSeconds > 8.0) {
-                                Console.WriteLine("TIMEOUT");
-                                Console.Out.Flush();
+                                accumulatedListeningText = "";
+                                lastHypothesizedText = "";
                                 SetMode(ServiceMode.Standby);
                             }
                         }
@@ -785,6 +843,10 @@ namespace SphereVoiceEngine {
                     wakeDictGrammar.Enabled = false;
                     dictGrammar.Enabled = true;
                     interruptGrammar.Enabled = true;
+                    accumulatedListeningText = "";
+                    lock (pcmLock) {
+                        accumulatedListeningPcm.Clear();
+                    }
                     Console.WriteLine("MODE:LISTENING");
                     Console.Out.Flush();
                 } else if (newMode == ServiceMode.Speaking) {
@@ -939,7 +1001,6 @@ namespace SphereVoiceEngine {
                 }
 
                 if (currentMode == ServiceMode.Listening) {
-                    SaveAudioIfAvailable(e.Result);
                     speechHeardInListening = true;
                     lastSpeechTime = DateTime.UtcNow;
 
@@ -1099,10 +1160,9 @@ namespace SphereVoiceEngine {
                     text = Regex.Replace(text, @"\bwhat a mouth\b", "what a mouse", RegexOptions.IgnoreCase);
                     text = Regex.Replace(text, @"\bwhat does a mouth\b", "what does a mouse", RegexOptions.IgnoreCase);
 
-                    lastHypothesizedText = "";
-                    Console.WriteLine("FINAL:" + text);
-                    Console.Out.Flush();
-                    SetMode(ServiceMode.Standby);
+                    accumulatedListeningText = (accumulatedListeningText + " " + text).Trim();
+                    lastSpeechTime = DateTime.UtcNow;
+                    speechHeardInListening = true;
                 }
             }
         }

@@ -169,7 +169,7 @@ static void handle_exit(void) {
 #endif
 }
 
-static int is_exit_command(const char *lower) {
+static int is_hard_exit_command(const char *lower) {
     if (!lower || strlen(lower) == 0) return 0;
     char clean[512];
     size_t len = strlen(lower);
@@ -191,28 +191,48 @@ static int is_exit_command(const char *lower) {
     if (strncmp(p, "please ", 7) == 0) p += 7;
     while (*p && isspace((unsigned char)*p)) p++;
 
-    return (strcmp(p, "exit") == 0 ||
-            strcmp(p, "quit") == 0 ||
-            strcmp(p, "q") == 0 ||
-            strcmp(p, "close") == 0 ||
+    return (strcmp(p, "exit app") == 0 ||
+            strcmp(p, "exit the app") == 0 ||
+            strcmp(p, "close app") == 0 ||
+            strcmp(p, "close the app") == 0 ||
+            strcmp(p, "quit app") == 0 ||
+            strcmp(p, "shutdown sphere") == 0 ||
+            strcmp(p, "shut down sphere") == 0 ||
+            strcmp(p, "terminate sphere") == 0 ||
+            strcmp(p, "exit") == 0 ||
+            strcmp(p, "quit") == 0);
+}
+
+static int is_farewell_command(const char *lower) {
+    if (!lower || strlen(lower) == 0) return 0;
+    char clean[512];
+    size_t len = strlen(lower);
+    if (len >= sizeof(clean)) len = sizeof(clean) - 1;
+    memcpy(clean, lower, len);
+    clean[len] = '\0';
+    while (len > 0 && (clean[len - 1] == '.' || clean[len - 1] == '?' || clean[len - 1] == '!' || clean[len - 1] == ' ' || clean[len - 1] == '"' || clean[len - 1] == '\'')) {
+        clean[--len] = '\0';
+    }
+    const char *p = clean;
+    while (*p && (isspace((unsigned char)*p) || *p == '"' || *p == '\'')) p++;
+
+    if (strncmp(p, "hey sphere ", 11) == 0) p += 11;
+    else if (strncmp(p, "hi sphere ", 10) == 0) p += 10;
+    else if (strncmp(p, "hello sphere ", 13) == 0) p += 13;
+    else if (strncmp(p, "sphere ", 7) == 0) p += 7;
+
+    while (*p && isspace((unsigned char)*p)) p++;
+
+    return (strcmp(p, "bye") == 0 ||
+            strcmp(p, "bye bye") == 0 ||
             strcmp(p, "goodbye") == 0 ||
             strcmp(p, "good bye") == 0 ||
-            strcmp(p, "bye") == 0 ||
-            strcmp(p, "bye bye") == 0 ||
             strcmp(p, "see you") == 0 ||
             strcmp(p, "see ya") == 0 ||
             strcmp(p, "see you later") == 0 ||
-            strcmp(p, "shutdown") == 0 ||
-            strcmp(p, "shut down") == 0 ||
-            strcmp(p, "close app") == 0 ||
-            strcmp(p, "close the app") == 0 ||
-            strcmp(p, "exit app") == 0 ||
-            strcmp(p, "exit the app") == 0 ||
-            strcmp(p, "quit app") == 0 ||
-            strcmp(p, "turn off") == 0 ||
-            strcmp(p, "terminate") == 0 ||
-            strcmp(p, "stop listening") == 0 ||
-            strcmp(p, "go to sleep") == 0);
+            strcmp(p, "good night") == 0 ||
+            strcmp(p, "go to sleep") == 0 ||
+            strcmp(p, "stop listening") == 0);
 }
 
 static int is_stop_command(const char *lower) {
@@ -348,8 +368,25 @@ static void handle_user_query(const char *raw_query) {
     char lower_query[512];
     to_lower_str(query, lower_query, sizeof(lower_query));
 
-    if (is_exit_command(lower_query)) {
+    if (is_hard_exit_command(lower_query)) {
         handle_exit();
+        return;
+    }
+
+    if (is_farewell_command(lower_query)) {
+        audio_stop_music();
+        renderer_set_state(STATE_SPEAKING);
+        renderer_set_status("Standing by | Say \"Hey Sphere\" to activate");
+        const char *farewell = "Goodbye! Say Hey Sphere whenever you need me.";
+        renderer_set_subtitle(farewell);
+        audio_speak(farewell);
+        while (app_running && audio_is_speaking()) {
+            platform_sleep(25);
+        }
+        audio_set_standby_mode();
+        renderer_set_state(STATE_IDLE);
+        renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
+        renderer_set_subtitle("Say \"Hey Sphere\" or type to wake me up!");
         return;
     }
 
@@ -694,7 +731,7 @@ int main(void) {
             size_t l = strlen(line);
             while (l > 0 && (line[l - 1] == '\n' || line[l - 1] == '\r')) line[--l] = '\0';
             if (l == 0) continue;
-            if (is_exit_command(line)) {
+            if (is_hard_exit_command(line)) {
                 handle_exit();
                 break;
             }
