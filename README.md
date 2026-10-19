@@ -41,11 +41,35 @@ A fast, lightweight, native C voice assistant and 3D ANSI Braille visualizer. Ru
 
 ## Quick Start
 
-### Windows
-```bash
+### Windows (PowerShell)
+
+Recommended terminal: **Windows Terminal** (or standard PowerShell with a TrueType font like Cascadia Code, Consolas, or JetBrains Mono).
+
+```powershell
+# 1. Open PowerShell in the sphere directory
+cd c:\path\to\sphere
+
+# 2. (Recommended) Set console encoding to UTF-8 for smooth 3D Braille rendering
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+# 3. Build the native engine and voice service
 mingw32-make
+
+# 4. (Optional) Run the ultra-fast small AI model locally (Qwen 0.5B, ~390 MB)
+# If Ollama is installed, pull the small model once:
+ollama pull qwen2.5:0.5b
+# Start the Ollama background server if not already active:
+ollama serve
+
+# 5. Launch SphereAI
 .\sphere_ai.exe
 ```
+
+> [!TIP]
+> **No Ollama? No Problem!** If Ollama is not running, SphereAI seamlessly falls back to its native offline reasoning engine and live web search without crashing or lagging. You can also run prebuilt binaries directly:
+> ```powershell
+> .\sphere_ai.exe
+> ```
 
 ### Linux
 ```bash
