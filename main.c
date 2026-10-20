@@ -624,16 +624,29 @@ static void handle_user_query(const char *raw_query) {
     renderer_set_subtitle(response);
 
     audio_speak(response);
+    platform_sleep(60);
 
+    int speak_loop_count = 0;
     while (app_running) {
+        speak_loop_count++;
         if (audio_check_exit_detected()) {
             handle_exit();
             return;
         }
 
         int wake_retrigger = 0;
-        int was_interrupted = audio_check_interrupted(&wake_retrigger);
-        int was_wake = audio_check_wake_detected();
+        int was_interrupted = 0;
+        int was_wake = 0;
+
+        /* Allow 300ms startup grace period so initial transients do not falsely stop speech */
+        if (speak_loop_count > 20) {
+            was_interrupted = audio_check_interrupted(&wake_retrigger);
+            was_wake = audio_check_wake_detected();
+        } else {
+            int dummy = 0;
+            audio_check_interrupted(&dummy);
+            audio_check_wake_detected();
+        }
         if (was_interrupted || was_wake) {
             audio_stop_speech();
             if (was_wake || wake_retrigger) {

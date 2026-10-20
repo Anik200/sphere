@@ -475,6 +475,7 @@ namespace SphereVoiceEngine {
         static int lastAudioLevel = 0;
         static DateTime lastAmpSendTime = DateTime.UtcNow;
         static string currentSpeakingText = "";
+        static DateTime speechStartTime = DateTime.UtcNow;
 
         static dynamic mediaPlayer = null;
         static Process musicProcess = null;
@@ -1232,6 +1233,7 @@ namespace SphereVoiceEngine {
                     StopMusic();
                     string textToSpeak = line.Substring(10).Trim();
                     currentSpeakingText = textToSpeak;
+                    speechStartTime = DateTime.UtcNow;
                     SetMode(ServiceMode.Speaking);
                     try {
                         synth.SpeakAsyncCancelAll();
@@ -1311,7 +1313,11 @@ namespace SphereVoiceEngine {
             string hypText = e.Result.Text.Trim();
 
             lock (modeLock) {
-                if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
+                if (currentMode == ServiceMode.Speaking) {
+                    // Do NOT interrupt active TTS speech on tentative hypothesized guesses
+                    return;
+                }
+                if (isMusicPlaying) {
                     bool isHypExit = IsExitPhrase(hypText) || BargeInExitRegex.IsMatch(hypText);
                     bool isHypStop = IsStopPhrase(hypText);
                     string hypWakeQuery = null;
@@ -1386,7 +1392,16 @@ namespace SphereVoiceEngine {
             string text = e.Result.Text.Trim();
 
             lock (modeLock) {
-                if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
+                if (currentMode == ServiceMode.Speaking) {
+                    // 1. Grace period: ignore first 900ms to avoid speaker onset clicks
+                    if ((DateTime.UtcNow - speechStartTime).TotalMilliseconds < 900) {
+                        return;
+                    }
+                    // 2. High confidence required so acoustic speaker echo doesn't trigger false barge-in
+                    if (e.Result.Confidence < 0.70f) {
+                        return;
+                    }
+
                     bool isExit = IsExitPhrase(text) || BargeInExitRegex.IsMatch(text);
                     bool isStop = IsStopPhrase(text);
                     string wakeQuery = null;
@@ -1397,6 +1412,45 @@ namespace SphereVoiceEngine {
                     }
 
                     try { synth.SpeakAsyncCancelAll(); } catch { }
+
+                    if (isExit) {
+                        Console.WriteLine("EXIT");
+                        Console.Out.Flush();
+                        return;
+                    }
+
+                    if (isStop) {
+                        Console.WriteLine("INTERRUPTED:" + text);
+                        Console.Out.Flush();
+                        SetMode(ServiceMode.Standby);
+                        return;
+                    }
+
+                    if (isWake) {
+                        Console.WriteLine("INTERRUPTED:" + text);
+                        Console.WriteLine("WAKE");
+                        if (!string.IsNullOrEmpty(wakeQuery)) {
+                            Console.WriteLine("FINAL:" + wakeQuery);
+                            SetMode(ServiceMode.Standby);
+                        } else {
+                            SetMode(ServiceMode.Listening);
+                        }
+                        Console.Out.Flush();
+                        return;
+                    }
+                    return;
+                }
+
+                if (isMusicPlaying) {
+                    bool isExit = IsExitPhrase(text) || BargeInExitRegex.IsMatch(text);
+                    bool isStop = IsStopPhrase(text);
+                    string wakeQuery = null;
+                    bool isWake = BargeInWakeRegex.IsMatch(text) || IsWakePhrase(text, out wakeQuery);
+
+                    if (!isExit && !isWake && !isStop) {
+                        return;
+                    }
+
                     StopMusic();
 
                     if (isExit) {
@@ -1518,7 +1572,11 @@ namespace SphereVoiceEngine {
         static void Sre_SpeechRecognitionRejected(object sender, SpeechRecognitionRejectedEventArgs e) {
             if (e.Result == null || string.IsNullOrEmpty(e.Result.Text)) return;
             lock (modeLock) {
-                if (currentMode == ServiceMode.Speaking || isMusicPlaying) {
+                if (currentMode == ServiceMode.Speaking) {
+                    // Never interrupt active speech on rejected/unrecognized audio
+                    return;
+                }
+                if (isMusicPlaying) {
                     string rejText = e.Result.Text.Trim();
                     bool isExit = IsExitPhrase(rejText) || BargeInExitRegex.IsMatch(rejText);
                     bool isStop = IsStopPhrase(rejText);

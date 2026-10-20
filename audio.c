@@ -1105,6 +1105,9 @@ void audio_speak(const char *text) {
     }
     audio_lock();
     spoken_words_stream[0] = '\0';
+    interrupted_detected = 0;
+    interrupted_with_wake = 0;
+    wake_detected = 0;
     audio_unlock();
 
     char clean_text[4096];
