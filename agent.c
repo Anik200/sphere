@@ -60,6 +60,41 @@ int agent_is_music_request(const char *query, MusicTrack *out_track) {
 #include <sys/types.h>
 #endif
 
+static int extract_custom_points(const char *json_str, float *out_coords, int max_points) {
+    if (!json_str || !out_coords || max_points <= 0) return 0;
+    const char *pos = strstr(json_str, "\"custom_points\":");
+    if (!pos) return 0;
+    pos = strchr(pos, '[');
+    if (!pos) return 0;
+    pos++;
+
+    int count = 0;
+    while (*pos && *pos != ']' && count < max_points) {
+        while (*pos && *pos != '[' && *pos != ']') pos++;
+        if (*pos != '[') break;
+        pos++;
+        float x = 0.0f, y = 0.0f, z = 0.0f;
+        char *endptr = NULL;
+        x = (float)strtod(pos, &endptr);
+        if (endptr && *endptr == ',') {
+            pos = endptr + 1;
+            y = (float)strtod(pos, &endptr);
+            if (endptr && *endptr == ',') {
+                pos = endptr + 1;
+                z = (float)strtod(pos, &endptr);
+            }
+        }
+        out_coords[count * 3 + 0] = x;
+        out_coords[count * 3 + 1] = y;
+        out_coords[count * 3 + 2] = z;
+        count++;
+        pos = strchr(pos, ']');
+        if (pos) pos++;
+        else break;
+    }
+    return count;
+}
+
 static int extract_json_value(const char *json_str, const char *key, char *out_val, size_t max_len) {
     if (!json_str || !key || !out_val || max_len == 0) return 0;
     char search_pattern[128];
@@ -220,7 +255,7 @@ static int query_sphere_ai_model(const char *query, const char *context, char *o
     fseek(f, 0, SEEK_SET);
 
     int success = 0;
-    if (sz > 5 && sz < 32768) {
+    if (sz > 5 && sz < 131072) {
         char *buf = (char *)malloc(sz + 1);
         if (buf) {
             size_t rd = fread(buf, 1, sz, f);
@@ -230,15 +265,30 @@ static int query_sphere_ai_model(const char *query, const char *context, char *o
             char found_str[16] = {0};
             char happy_str[16] = {0};
 
+            char shape_str[64] = {0};
+            char custom_name[64] = {0};
+            char color_str[32] = {0};
+
             extract_json_value(buf, "found", found_str, sizeof(found_str));
             extract_json_value(buf, "answer", ans, sizeof(ans));
             extract_json_value(buf, "is_happy", happy_str, sizeof(happy_str));
+            extract_json_value(buf, "shape", shape_str, sizeof(shape_str));
+            extract_json_value(buf, "custom_shape_name", custom_name, sizeof(custom_name));
+            extract_json_value(buf, "color", color_str, sizeof(color_str));
 
             if ((strcmp(found_str, "1") == 0 || strcmp(found_str, "true") == 0) && strlen(ans) > 5) {
                 strncpy(out_response, ans, max_len - 1);
                 out_response[max_len - 1] = '\0';
                 if (out_is_happy) {
                     *out_is_happy = (atoi(happy_str) == 1 || strcmp(happy_str, "true") == 0);
+                }
+
+                static float dynamic_pts[NUM_PARTICLES * 3];
+                int num_pts = extract_custom_points(buf, dynamic_pts, NUM_PARTICLES);
+                if (num_pts > 10) {
+                    renderer_set_custom_particles(dynamic_pts, num_pts, custom_name, color_str);
+                } else if (strlen(shape_str) > 0) {
+                    renderer_set_expression_by_name(shape_str);
                 }
                 success = 1;
             }

@@ -41,7 +41,9 @@ typedef enum {
     EXPR_DONUT,
     EXPR_SPIRAL,
     EXPR_FLOWER,
-    EXPR_INFINITY
+    EXPR_INFINITY,
+    /* Dynamic AI Custom Shapes */
+    EXPR_CUSTOM
 } BallExpression;
 
 void renderer_init(void);
@@ -58,6 +60,8 @@ BallExpression renderer_get_expression(void);
 BallExpression renderer_parse_expression_name(const char *name);
 const char *renderer_get_expression_name(BallExpression expr);
 void renderer_set_expression_by_name(const char *name);
+void renderer_set_custom_particles(const float *coords, int count, const char *shape_name, const char *color);
+const char *renderer_get_custom_shape_name(void);
 void renderer_set_custom_color(const char *ansi_color);
 const char *renderer_get_custom_color(void);
 void renderer_render_frame(void);

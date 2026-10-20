@@ -40,6 +40,9 @@ static volatile float music_phase = 0.0f;
 static volatile float music_beat_wave = 0.0f;
 static volatile float ripple_phase = 0.0f;
 static char custom_color[32] = "";
+static char custom_shape_name[64] = "AI DRAWING";
+static char custom_shape_color[32] = COLOR_CYAN;
+static int custom_has_3d = 0;
 
 static char prev_color[32] = COLOR_GREEN;
 static char active_target_color[32] = COLOR_GREEN;
@@ -938,6 +941,7 @@ const char *renderer_get_expression_name(BallExpression expr) {
         case EXPR_SPIRAL:    return "FIGURE: GALAXY SPIRAL";
         case EXPR_FLOWER:    return "FIGURE: FLOWER";
         case EXPR_INFINITY:  return "FIGURE: INFINITY";
+        case EXPR_CUSTOM:    return custom_shape_name;
         default:             return "SPHERE";
     }
 }
@@ -946,6 +950,49 @@ void renderer_set_expression_by_name(const char *name) {
     BallExpression expr = renderer_parse_expression_name(name);
     renderer_set_expression(expr);
 }
+
+void renderer_set_custom_particles(const float *coords, int count, const char *shape_name, const char *color) {
+    if (!coords || count <= 0) return;
+    lock_renderer();
+    if (shape_name && strlen(shape_name) > 0) {
+        snprintf(custom_shape_name, sizeof(custom_shape_name), "DRAWING: %s", shape_name);
+    } else {
+        snprintf(custom_shape_name, sizeof(custom_shape_name), "AI DRAWING");
+    }
+    if (color && strlen(color) > 0) {
+        if (strcasecmp(color, "red") == 0) snprintf(custom_shape_color, sizeof(custom_shape_color), "%s", COLOR_RED);
+        else if (strcasecmp(color, "gold") == 0 || strcasecmp(color, "yellow") == 0) snprintf(custom_shape_color, sizeof(custom_shape_color), "%s", COLOR_GOLD);
+        else if (strcasecmp(color, "green") == 0 || strcasecmp(color, "emerald") == 0) snprintf(custom_shape_color, sizeof(custom_shape_color), "%s", COLOR_GREEN);
+        else if (strcasecmp(color, "pink") == 0) snprintf(custom_shape_color, sizeof(custom_shape_color), "%s", COLOR_PINK);
+        else if (strcasecmp(color, "purple") == 0) snprintf(custom_shape_color, sizeof(custom_shape_color), "%s", COLOR_PURPLE_BRIGHT);
+        else if (strcasecmp(color, "blue") == 0) snprintf(custom_shape_color, sizeof(custom_shape_color), "%s", COLOR_BLUE);
+        else if (strcasecmp(color, "white") == 0) snprintf(custom_shape_color, sizeof(custom_shape_color), "%s", COLOR_WHITE);
+        else if (strcasecmp(color, "cyan") == 0) snprintf(custom_shape_color, sizeof(custom_shape_color), "%s", COLOR_CYAN);
+        else snprintf(custom_shape_color, sizeof(custom_shape_color), "%s", color);
+    } else {
+        snprintf(custom_shape_color, sizeof(custom_shape_color), "%s", COLOR_CYAN);
+    }
+
+    custom_has_3d = 0;
+    for (int i = 0; i < NUM_PARTICLES; i++) {
+        int src_idx = (i * count) / NUM_PARTICLES;
+        if (src_idx >= count) src_idx = count - 1;
+        particles[i].tx = coords[src_idx * 3 + 0];
+        particles[i].ty = coords[src_idx * 3 + 1];
+        particles[i].tz = coords[src_idx * 3 + 2];
+        if (fabsf(particles[i].tz) > 0.05f) {
+            custom_has_3d = 1;
+        }
+    }
+    current_expression = EXPR_CUSTOM;
+    expression_countdown = 600;
+    unlock_renderer();
+}
+
+const char *renderer_get_custom_shape_name(void) {
+    return custom_shape_name;
+}
+
 
 void renderer_set_custom_color(const char *ansi_color) {
     lock_renderer();
@@ -1167,7 +1214,7 @@ void renderer_render_frame(void) {
 
         if (current_expression == EXPR_CUBE || current_expression == EXPR_DONUT ||
             current_expression == EXPR_PYRAMID || current_expression == EXPR_SPIRAL ||
-            current_expression == EXPR_INFINITY) {
+            current_expression == EXPR_INFINITY || (current_expression == EXPR_CUSTOM && custom_has_3d)) {
             float sa = angle * 0.75f;
             float sp = angle * 0.40f;
             float cos_sa = cosf(sa), sin_sa = sinf(sa);
@@ -1192,6 +1239,10 @@ void renderer_render_frame(void) {
             float heart_pulse = 1.0f + 0.12f * beat * beat;
             shape_tx *= heart_pulse;
             shape_ty *= heart_pulse;
+        } else if (current_expression == EXPR_CUSTOM && !custom_has_3d) {
+            float float_scale = 1.0f + 0.035f * sinf(angle * 2.5f);
+            shape_tx *= float_scale;
+            shape_ty *= float_scale;
         }
 
         float fx = (1.0f - morph) * rx + morph * shape_tx;
@@ -1231,6 +1282,7 @@ void renderer_render_frame(void) {
             case EXPR_SPIRAL:    target_color = COLOR_CYAN; break;
             case EXPR_FLOWER:    target_color = COLOR_PINK; break;
             case EXPR_INFINITY:  target_color = COLOR_BLUE; break;
+            case EXPR_CUSTOM:    target_color = custom_shape_color; break;
             default:             target_color = COLOR_GOLD; break;
         }
         if (custom_color[0] != '\0') {

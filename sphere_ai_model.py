@@ -7,6 +7,7 @@ import urllib.request
 import subprocess
 import time
 import shutil
+import dynamic_artist
 
 AVAILABLE_SHAPES = {
     # Faces
@@ -38,6 +39,20 @@ AVAILABLE_SHAPES = {
     "infinity": ["infinity", "loop", "lemniscate"],
     "sphere": ["sphere", "reset", "normal"]
 }
+
+DRAW_TRIGGERS = [
+    r"\b(draw|sketch|paint|illustrate|render|shape of|make a|create a|show me a|can you make|draw me|make me)\b"
+]
+
+def has_drawing_intent(query: str) -> bool:
+    q = query.lower()
+    for pat in DRAW_TRIGGERS:
+        if re.search(pat, q):
+            return True
+    for k in dynamic_artist.SEMANTIC_BUILDERS:
+        if re.search(r"\b" + re.escape(k) + r"\b", q):
+            return True
+    return False
 
 def detect_shape_from_text(query: str, response: str) -> str:
     # 1. Check explicit tag like [shape: wave] or shape: wave
@@ -297,15 +312,10 @@ def process_query(query: str, existing_context: str = "") -> dict:
     model_name = get_best_ollama_model()
 
     system_instruction = (
-        "You are SphereAI, an interactive 3D particle voice assistant. "
-        "You have direct neural control over 600 glowing particles and can morph into funny faces, hand gestures, and 3D figures! "
-        "Supported shapes:\n"
-        "- Faces: happy, sad, surprised, angry, wink, cool, silly, laugh, confused, cat, skull\n"
-        "- Gestures: wave, thumbs_up, peace, rock, ok\n"
-        "- Figures: heart, star, cube, pyramid, donut, spiral, flower, infinity, sphere\n"
-        "When the user asks you to make a face, gesture, draw a shape/figure, or to express emotion visually, "
-        "add [shape: <shape_name>] at the end of your answer. "
-        "Answer warmly in 1-2 spoken sentences suitable for voice synthesis. "
+        "You are SphereAI, an interactive 3D particle voice assistant capable of physically drawing and rendering "
+        "ANY object, creature, vehicle, tool, weapon, landscape, or abstract shape on your 600-particle canvas! "
+        "When asked to draw or create something, enthusiastically describe what you are drawing in 1-2 spoken sentences. "
+        "Answer warmly, naturally, and concisely suitable for voice synthesis. "
         "Do not use bullet points or asterisks."
     )
 
@@ -334,15 +344,30 @@ def process_query(query: str, existing_context: str = "") -> dict:
             ai_answer = " ".join(sentences[:2])
 
     detected_shape = detect_shape_from_text(query, ai_answer)
-    # Remove any [shape: ...] tags from the spoken voice output
-    ai_answer = re.sub(r"\[?\bshape\s*:\s*[a-zA-Z0-9_]+\]?", "", ai_answer, flags=re.IGNORECASE).strip()
+
+    custom_points = None
+    custom_shape_name = ""
+    custom_color = ""
+
+    # Synthesize custom particles if drawing intent is detected
+    if has_drawing_intent(query) or "[strokes:" in ai_answer.lower():
+        pts, name, col = dynamic_artist.synthesize_custom_shape(query, ai_answer)
+        custom_points = pts
+        custom_shape_name = name
+        custom_color = col
+        if not ai_answer or len(ai_answer) < 5:
+            ai_answer = f"Morphing my 600 glowing particles to draw a {name.lower()} for you! Watch the particles align in 3D space."
+
+    # Remove any technical tags from the spoken voice output
+    ai_answer = re.sub(r"\[?\bshape\s*:\s*[a-zA-Z0-9_]+\]?", "", ai_answer, flags=re.IGNORECASE)
+    ai_answer = re.sub(r"\[strokes\s*:.*?\]", "", ai_answer, flags=re.IGNORECASE | re.DOTALL).strip()
 
     is_happy = 0
     lower_ans = ai_answer.lower()
-    if any(w in lower_ans for w in ["joy", "happy", "wonderful", "delighted", "awesome", "fantastic", "glad"]):
+    if any(w in lower_ans for w in ["joy", "happy", "wonderful", "delighted", "awesome", "fantastic", "glad", "love"]):
         is_happy = 1
 
-    return {
+    result = {
         "found": 1 if len(ai_answer) > 0 else 0,
         "answer": ai_answer,
         "action": action,
@@ -350,6 +375,13 @@ def process_query(query: str, existing_context: str = "") -> dict:
         "is_happy": is_happy,
         "shape": detected_shape
     }
+
+    if custom_points:
+        result["custom_points"] = custom_points
+        result["custom_shape_name"] = custom_shape_name
+        result["color"] = custom_color
+
+    return result
 
 def main():
     if len(sys.argv) < 3:
