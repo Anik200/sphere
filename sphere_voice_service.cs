@@ -200,14 +200,17 @@ namespace SphereVoiceEngine {
                     SetDefaultEndpoint(bestId);
                 }
 
-                // Ensure unmuted and master volume >= 90% on selected mic
+                // Ensure unmuted and master volume >= 95% on all physical/active mics
                 for (int i = 0; i < count; i++) {
                     IMMDevice dev;
                     col.Item(i, out dev);
                     if (dev == null) continue;
-                    string id;
-                    dev.GetId(out id);
-                    if (id == bestId) {
+                    string name = GetDeviceName(dev).ToLowerInvariant();
+                    bool isDummy = false;
+                    foreach (string d in dummyKeywords) {
+                        if (name.Contains(d)) { isDummy = true; break; }
+                    }
+                    if (!isDummy) {
                         try {
                             Guid iidVol = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
                             object oVol;
@@ -222,12 +225,11 @@ namespace SphereVoiceEngine {
                                 }
                                 float level;
                                 vol.GetMasterVolumeLevelScalar(out level);
-                                if (level < 0.80f) {
-                                    vol.SetMasterVolumeLevelScalar(0.90f, ref g);
+                                if (level < 0.85f) {
+                                    vol.SetMasterVolumeLevelScalar(0.95f, ref g);
                                 }
                             }
                         } catch { }
-                        break;
                     }
                 }
 
@@ -488,17 +490,19 @@ namespace SphereVoiceEngine {
                 }
 
                 try {
-                    sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(2200);
-                    sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(2600);
-                    sre.InitialSilenceTimeout = TimeSpan.FromSeconds(8.0);
+                    sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(200);
+                    sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(250);
+                    sre.InitialSilenceTimeout = TimeSpan.FromSeconds(5.0);
                 } catch { }
 
                 Choices wakeChoices = new Choices(new string[] {
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                     "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
+                    "hey sfeer", "sfeer", "hey sfear", "sfear",
                     "hey square", "square", "hey sphear", "hey severe", "severe", "hey steer", "steer", "hey spire", "spire", "hey spir",
                     "hey fear", "hi fear", "hello fear", "her sphere", "here sphere", "hear sphere",
                     "hey spare", "the sphere", "a sphere", "hay sphere", "ay sphere", "hey siri", "hey sir",
+                    "hey peer", "peer", "hey pier", "pier", "hey beer", "hey sere", "hey speed", "hey spirit", "spirit", "hey dear", "hey clear",
                     "wake up", "wake up sphere",
                     "stop", "be quiet", "shut up", "pause", "cancel",
                     "close app", "close the app", "exit app", "exit the app", "quit app",
@@ -515,9 +519,11 @@ namespace SphereVoiceEngine {
                 Choices wakePrefixChoices = new Choices(new string[] {
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                     "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
+                    "hey sfeer", "sfeer", "hey sfear", "sfear",
                     "hey square", "square", "hey sphear", "hey severe", "severe", "hey steer", "steer", "hey spire", "spire",
                     "her sphere", "here sphere", "hey fear", "wake up sphere", "wake up",
                     "hey spare", "hay sphere", "ay sphere", "hey siri",
+                    "hey peer", "peer", "hey pier", "pier", "hey beer", "hey sere", "hey speed", "hey spirit", "spirit", "hey dear", "hey clear",
                     "hey sphere play", "sphere play", "play"
                 });
                 GrammarBuilder wakeDictGb = new GrammarBuilder();
@@ -528,6 +534,7 @@ namespace SphereVoiceEngine {
                 wakeDictGrammar.Name = "WakeDictGrammar";
                 wakeDictGrammar.Weight = 0.5f;
                 try { sre.LoadGrammar(wakeDictGrammar); } catch { }
+                wakeDictGrammar.Enabled = false;
 
                 dictGrammar = new DictationGrammar();
                 dictGrammar.Name = "DictationGrammar";
@@ -562,6 +569,7 @@ namespace SphereVoiceEngine {
                 sre.AudioLevelUpdated += Sre_AudioLevelUpdated;
                 sre.SpeechDetected += Sre_SpeechDetected;
 
+                SetMode(ServiceMode.Standby);
                 sre.RecognizeAsync(RecognizeMode.Multiple);
 
                 Console.WriteLine("STATUS:READY");
@@ -581,7 +589,7 @@ namespace SphereVoiceEngine {
                             string bestText = !string.IsNullOrWhiteSpace(accumulatedListeningText) ? accumulatedListeningText : lastHypothesizedText;
                             bestText = StripWakePrefix(bestText);
 
-                            if (speechHeardInListening && silence.TotalMilliseconds >= 1700 && !string.IsNullOrWhiteSpace(bestText) && !IsWakeOnlyWord(bestText) && bestText.Length >= 2) {
+                            if (speechHeardInListening && silence.TotalMilliseconds >= 1800 && !string.IsNullOrWhiteSpace(bestText) && !IsWakeOnlyWord(bestText) && bestText.Length >= 2) {
                                 SaveAccumulatedAudio();
                                 Console.WriteLine("FINAL:" + bestText);
                                 Console.Out.Flush();
@@ -616,9 +624,12 @@ namespace SphereVoiceEngine {
             string[] wakes = new string[] {
                 "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                 "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
+                "hey sfeer", "sfeer", "hey sfear", "sfear",
                 "hey square", "square", "hey sphear", "hey severe", "severe", "hey steer", "steer", "hey spire", "spire", "hey spir",
                 "hey fear", "hi fear", "hello fear", "her sphere", "here sphere", "hear sphere",
-                "hey spare", "the sphere", "a sphere", "my sphere", "hay sphere", "ay sphere", "hey siri", "hey sir", "wake up", "wake up sphere"
+                "hey spare", "the sphere", "a sphere", "my sphere", "hay sphere", "ay sphere", "hey siri", "hey sir",
+                "hey peer", "peer", "hey pier", "pier", "hey beer", "hey sere", "hey speed", "hey spirit", "spirit", "hey dear", "hey clear",
+                "wake up", "wake up sphere"
             };
             foreach (string w in wakes) {
                 if (clean == w) return true;
@@ -635,9 +646,12 @@ namespace SphereVoiceEngine {
                 "ok, sphere", "ok sphere", "okay, sphere", "okay sphere", "yo, sphere", "yo sphere",
                 "hey, spear", "hey spear", "hi, spear", "hi spear", "hello, spear", "hello sphere",
                 "ok spear", "okay spear", "wake up sphere", "wake up", "her sphere", "here sphere", "hear sphere",
+                "hey sfeer", "sfeer", "hey sfear", "sfear",
                 "hey square", "square", "hey sphear", "hey severe", "severe", "hey steer", "steer", "hey spire", "spire",
                 "hey fear", "hi fear", "hello fear", "hey spare", "the sphere", "a sphere", "my sphere",
-                "hay sphere", "ay sphere", "hey siri", "hey sir", "sphere", "spear"
+                "hay sphere", "ay sphere", "hey siri", "hey sir",
+                "hey peer", "peer", "hey pier", "pier", "hey beer", "hey sere", "hey speed", "hey spirit", "spirit", "hey dear", "hey clear",
+                "sphere", "spear"
             };
             foreach (string p in prefixes) {
                 if (lower == p) {
@@ -668,9 +682,12 @@ namespace SphereVoiceEngine {
                 "her sphere", "here sphere", "hear sphere",
                 "hey, spear", "hey spear", "hi, spear", "hi spear", "hello, spear", "hello sphere",
                 "ok spear", "okay spear", "spear",
+                "hey sfeer", "sfeer", "hey sfear", "sfear",
                 "hey square", "square", "hey sphear", "hey severe", "severe", "hey steer", "steer", "hey spire", "spire", "hey spir",
                 "hey fear", "hi fear", "hello fear", "hey spare", "the sphere", "a sphere", "my sphere",
-                "hay sphere", "ay sphere", "hey siri", "hey sir", "wake up sphere", "wake up", "sphere"
+                "hay sphere", "ay sphere", "hey siri", "hey sir", "wake up sphere", "wake up", "sphere",
+                "hey peer", "peer", "hey pier", "pier", "hey beer", "hey beer sphere",
+                "hey sere", "hey speed", "hey spirit", "spirit", "hey dear", "hey clear", "hey there sphere"
             };
 
             foreach (string kw in sphereKeywords) {
@@ -832,6 +849,11 @@ namespace SphereVoiceEngine {
                 lastHypothesizedText = "";
 
                 if (newMode == ServiceMode.Standby) {
+                    try {
+                        sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(200);
+                        sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(250);
+                        sre.InitialSilenceTimeout = TimeSpan.FromSeconds(5.0);
+                    } catch { }
                     wakeGrammar.Enabled = true;
                     wakeDictGrammar.Enabled = false;
                     dictGrammar.Enabled = false;
@@ -839,6 +861,11 @@ namespace SphereVoiceEngine {
                     Console.WriteLine("MODE:STANDBY");
                     Console.Out.Flush();
                 } else if (newMode == ServiceMode.Listening) {
+                    try {
+                        sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(1200);
+                        sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(1500);
+                        sre.InitialSilenceTimeout = TimeSpan.FromSeconds(8.0);
+                    } catch { }
                     wakeGrammar.Enabled = false;
                     wakeDictGrammar.Enabled = false;
                     dictGrammar.Enabled = true;
@@ -850,6 +877,10 @@ namespace SphereVoiceEngine {
                     Console.WriteLine("MODE:LISTENING");
                     Console.Out.Flush();
                 } else if (newMode == ServiceMode.Speaking) {
+                    try {
+                        sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(250);
+                        sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(300);
+                    } catch { }
                     wakeGrammar.Enabled = true;
                     wakeDictGrammar.Enabled = false;
                     dictGrammar.Enabled = false;
@@ -1020,9 +1051,19 @@ namespace SphereVoiceEngine {
                         }
                     }
                 } else if (currentMode == ServiceMode.Standby) {
-                    // Do not switch mode on a tentative hypothesis in Standby!
-                    // Mode transition to Listening must only occur when the wake word is confirmed in Sre_SpeechRecognized.
-                    return;
+                    string hypWakeQuery = null;
+                    if (IsWakePhrase(hypText, out hypWakeQuery)) {
+                        Console.WriteLine("WAKE");
+                        hypWakeQuery = StripWakePrefix(hypWakeQuery);
+                        if (!string.IsNullOrWhiteSpace(hypWakeQuery) && !IsWakeOnlyWord(hypWakeQuery) && hypWakeQuery.Length >= 2) {
+                            Console.WriteLine("FINAL:" + hypWakeQuery);
+                            SetMode(ServiceMode.Standby);
+                        } else {
+                            SetMode(ServiceMode.Listening);
+                        }
+                        Console.Out.Flush();
+                        return;
+                    }
                 }
             }
         }
@@ -1246,9 +1287,9 @@ namespace SphereVoiceEngine {
                 }
 
                 if (currentMode == ServiceMode.Standby) {
-                    string text = e.Result.Text.Trim();
+                    string text = e.Result != null && !string.IsNullOrEmpty(e.Result.Text) ? e.Result.Text.Trim() : "";
                     string query;
-                    if (IsWakePhrase(text, out query)) {
+                    if (!string.IsNullOrEmpty(text) && IsWakePhrase(text, out query)) {
                         Console.WriteLine("WAKE");
                         query = StripWakePrefix(query);
                         if (!string.IsNullOrWhiteSpace(query) && !IsWakeOnlyWord(query) && query.Length >= 2) {
@@ -1258,6 +1299,25 @@ namespace SphereVoiceEngine {
                             SetMode(ServiceMode.Listening);
                         }
                         Console.Out.Flush();
+                        return;
+                    }
+
+                    if (e.Result != null && e.Result.Alternates != null) {
+                        foreach (RecognizedPhrase alt in e.Result.Alternates) {
+                            string altText = alt.Text ?? "";
+                            if (!string.IsNullOrEmpty(altText) && IsWakePhrase(altText, out query)) {
+                                Console.WriteLine("WAKE");
+                                query = StripWakePrefix(query);
+                                if (!string.IsNullOrWhiteSpace(query) && !IsWakeOnlyWord(query) && query.Length >= 2) {
+                                    Console.WriteLine("FINAL:" + query);
+                                    SetMode(ServiceMode.Standby);
+                                } else {
+                                    SetMode(ServiceMode.Listening);
+                                }
+                                Console.Out.Flush();
+                                return;
+                            }
+                        }
                     }
                 }
             }
