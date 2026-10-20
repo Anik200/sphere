@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Speech.Recognition;
 using System.Speech.Synthesis;
@@ -96,6 +97,217 @@ namespace SphereVoiceEngine {
     struct PROPVARIANT {
         [FieldOffset(0)] public short vt;
         [FieldOffset(8)] public IntPtr pwszVal;
+    }
+
+    [Guid("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IAudioClient {
+        [PreserveSig] int Initialize(int shareMode, int streamFlags, long hnsBufferDuration, long hnsPeriodicity, IntPtr pFormat, ref Guid audioSessionGuid);
+        [PreserveSig] int GetBufferSize(out uint pNumBufferFrames);
+        [PreserveSig] int GetStreamLatency(out long phnsLatency);
+        [PreserveSig] int GetCurrentPadding(out uint pNumPaddingFrames);
+        [PreserveSig] int IsFormatSupported(int shareMode, IntPtr pFormat, out IntPtr ppClosestMatch);
+        [PreserveSig] int GetMixFormat(out IntPtr ppDeviceFormat);
+        [PreserveSig] int GetDevicePeriod(out long phnsDefaultDevicePeriod, out long phnsMinimumDevicePeriod);
+        [PreserveSig] int Start();
+        [PreserveSig] int Stop();
+        [PreserveSig] int Reset();
+        [PreserveSig] int SetEventHandle(IntPtr eventHandle);
+        [PreserveSig] int GetService(ref Guid riid, [MarshalAs(UnmanagedType.IUnknown)] out object ppv);
+    }
+
+    [Guid("C8ADBD64-E71E-48A0-A4DE-185C395CD317"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IAudioCaptureClient {
+        [PreserveSig] int GetBuffer(out IntPtr ppData, out uint pNumFramesToRead, out uint pdwFlags, out ulong pu64DevicePosition, out ulong pu64QPCPosition);
+        [PreserveSig] int ReleaseBuffer(uint NumFramesRead);
+        [PreserveSig] int GetNextPacketSize(out uint pNumFramesInNextPacket);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct WAVEFORMATEX {
+        public ushort wFormatTag;
+        public ushort nChannels;
+        public uint nSamplesPerSec;
+        public uint nAvgBytesPerSec;
+        public ushort nBlockAlign;
+        public ushort wBitsPerSample;
+        public ushort cbSize;
+    }
+
+    static class WasapiCaptureManager {
+        static Thread captureThread = null;
+        static volatile bool running = false;
+        static volatile bool isRecordingQuery = false;
+
+        static readonly object audioLock = new object();
+        static readonly List<short> querySamples = new List<short>();
+        static readonly short[] preRollBuffer = new short[16000 * 2]; // 2-second circular buffer
+        static int preRollHead = 0;
+        static int preRollCount = 0;
+
+        static volatile bool voiceDetected = false;
+        static DateTime lastVoiceTime = DateTime.UtcNow;
+
+        public static bool VoiceDetected { get { return voiceDetected; } }
+        public static DateTime LastVoiceTime { get { return lastVoiceTime; } }
+
+        public static void StartRecordingQuery() {
+            lock (audioLock) {
+                querySamples.Clear();
+                int copyCount = Math.Min(preRollCount, 16000); // 1.0 second pre-roll
+                if (copyCount > 0) {
+                    int startIdx = (preRollHead - copyCount + preRollBuffer.Length) % preRollBuffer.Length;
+                    for (int i = 0; i < copyCount; i++) {
+                        querySamples.Add(preRollBuffer[(startIdx + i) % preRollBuffer.Length]);
+                    }
+                }
+                isRecordingQuery = true;
+                voiceDetected = false;
+                lastVoiceTime = DateTime.UtcNow;
+            }
+        }
+
+        public static byte[] StopAndGetPcm() {
+            lock (audioLock) {
+                isRecordingQuery = false;
+                if (querySamples.Count == 0) return new byte[0];
+                byte[] bytes = new byte[querySamples.Count * 2];
+                Buffer.BlockCopy(querySamples.ToArray(), 0, bytes, 0, bytes.Length);
+                return bytes;
+            }
+        }
+
+        public static int GetRecordedSampleCount() {
+            lock (audioLock) {
+                return querySamples.Count;
+            }
+        }
+
+        public static void Start() {
+            if (running) return;
+            running = true;
+            captureThread = new Thread(CaptureLoop);
+            captureThread.IsBackground = true;
+            captureThread.Priority = ThreadPriority.AboveNormal;
+            captureThread.Start();
+        }
+
+        public static void Stop() {
+            running = false;
+            try { if (captureThread != null) captureThread.Join(500); } catch { }
+        }
+
+        static void CaptureLoop() {
+            try {
+                var enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorLocal());
+                IMMDevice dev;
+                enumerator.GetDefaultAudioEndpoint(1, 0, out dev);
+                if (dev == null) return;
+
+                Guid iidClient = new Guid("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2");
+                object oClient;
+                dev.Activate(ref iidClient, 1, IntPtr.Zero, out oClient);
+                var client = (IAudioClient)oClient;
+                IntPtr pFormat;
+                client.GetMixFormat(out pFormat);
+                WAVEFORMATEX wfx = (WAVEFORMATEX)Marshal.PtrToStructure(pFormat, typeof(WAVEFORMATEX));
+
+                Guid g = Guid.Empty;
+                int hr = client.Initialize(0, 0, 10000000, 0, pFormat, ref g);
+                if (hr != 0) return;
+
+                Guid iidCap = new Guid("C8ADBD64-E71E-48A0-A4DE-185C395CD317");
+                object oCap;
+                client.GetService(ref iidCap, out oCap);
+                var cap = (IAudioCaptureClient)oCap;
+
+                client.Start();
+
+                double resampleRatio = (double)wfx.nSamplesPerSec / 16000.0;
+                double sampleAcc = 0;
+                int inChannels = Math.Max(1, (int)wfx.nChannels);
+
+                while (running) {
+                    Thread.Sleep(10);
+                    uint packetLength = 0;
+                    cap.GetNextPacketSize(out packetLength);
+                    while (packetLength > 0) {
+                        IntPtr pData;
+                        uint numFrames;
+                        uint flags;
+                        ulong devPos, qpcPos;
+                        cap.GetBuffer(out pData, out numFrames, out flags, out devPos, out qpcPos);
+                        if (numFrames > 0 && pData != IntPtr.Zero && (flags & 1) == 0) {
+                            int totalIn = (int)numFrames * inChannels;
+                            if (wfx.wBitsPerSample == 32) {
+                                float[] fbuf = new float[totalIn];
+                                Marshal.Copy(pData, fbuf, 0, totalIn);
+                                for (int f = 0; f < (int)numFrames; f++) {
+                                    float mono = 0;
+                                    for (int c = 0; c < inChannels; c++) {
+                                        mono += fbuf[f * inChannels + c];
+                                    }
+                                    mono /= inChannels;
+
+                                    if (Math.Abs(mono) > 0.006f) {
+                                        voiceDetected = true;
+                                        lastVoiceTime = DateTime.UtcNow;
+                                    }
+
+                                    sampleAcc += 1.0;
+                                    if (sampleAcc >= resampleRatio) {
+                                        sampleAcc -= resampleRatio;
+                                        float clamped = Math.Max(-1.0f, Math.Min(1.0f, mono));
+                                        short s16 = (short)(clamped * 32767.0f);
+                                        lock (audioLock) {
+                                            preRollBuffer[preRollHead] = s16;
+                                            preRollHead = (preRollHead + 1) % preRollBuffer.Length;
+                                            if (preRollCount < preRollBuffer.Length) preRollCount++;
+
+                                            if (isRecordingQuery && querySamples.Count < 16000 * 20) {
+                                                querySamples.Add(s16);
+                                            }
+                                        }
+                                    }
+                                }
+                            } else if (wfx.wBitsPerSample == 16) {
+                                short[] sbuf = new short[totalIn];
+                                Marshal.Copy(pData, sbuf, 0, totalIn);
+                                for (int f = 0; f < (int)numFrames; f++) {
+                                    int mono = 0;
+                                    for (int c = 0; c < inChannels; c++) {
+                                        mono += sbuf[f * inChannels + c];
+                                    }
+                                    mono /= inChannels;
+
+                                    if (Math.Abs(mono) > 200) {
+                                        voiceDetected = true;
+                                        lastVoiceTime = DateTime.UtcNow;
+                                    }
+
+                                    sampleAcc += 1.0;
+                                    if (sampleAcc >= resampleRatio) {
+                                        sampleAcc -= resampleRatio;
+                                        short s16 = (short)mono;
+                                        lock (audioLock) {
+                                            preRollBuffer[preRollHead] = s16;
+                                            preRollHead = (preRollHead + 1) % preRollBuffer.Length;
+                                            if (preRollCount < preRollBuffer.Length) preRollCount++;
+
+                                            if (isRecordingQuery && querySamples.Count < 16000 * 20) {
+                                                querySamples.Add(s16);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        cap.ReleaseBuffer(numFrames);
+                        cap.GetNextPacketSize(out packetLength);
+                    }
+                }
+                client.Stop();
+            } catch { }
+        }
     }
 
     static class AudioDeviceManager {
@@ -346,21 +558,80 @@ namespace SphereVoiceEngine {
             } catch { }
         }
 
-        static void SaveAccumulatedAudio() {
-            try {
-                byte[] pcm;
-                lock (pcmLock) {
-                    pcm = accumulatedListeningPcm.ToArray();
+        static string FindPythonExecutable() {
+            string localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            if (!string.IsNullOrEmpty(localApp)) {
+                for (int v = 14; v >= 8; v--) {
+                    string cand = Path.Combine(localApp, "Programs", "Python", "Python3" + v, "python.exe");
+                    if (File.Exists(cand)) return cand;
                 }
+            }
+            return "python";
+        }
+
+        static string RunNeuralTranscription(string wavPath) {
+            try {
+                if (!File.Exists(wavPath) || new FileInfo(wavPath).Length < 1000) return "";
+                string py = FindPythonExecutable();
+                string tempDir = Path.GetTempPath();
+                string resFile = Path.Combine(tempDir, "sphere_stt_res.txt");
+                if (File.Exists(resFile)) {
+                    try { File.Delete(resFile); } catch { }
+                }
+
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string scriptPath = Path.Combine(baseDir, "transcribe.py");
+                if (!File.Exists(scriptPath)) scriptPath = "transcribe.py";
+
+                ProcessStartInfo psi = new ProcessStartInfo {
+                    FileName = py,
+                    Arguments = "\"" + scriptPath + "\" \"" + wavPath + "\" \"" + resFile + "\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                };
+                using (var p = Process.Start(psi)) {
+                    if (p.WaitForExit(6000)) {
+                        if (File.Exists(resFile)) {
+                            string text = File.ReadAllText(resFile, System.Text.Encoding.UTF8).Trim();
+                            try { File.Delete(resFile); } catch { }
+                            return text;
+                        }
+                    } else {
+                        try { p.Kill(); } catch { }
+                    }
+                }
+            } catch { }
+            return "";
+        }
+
+        static string SaveAccumulatedAudioAndTranscribe(string fallbackText) {
+            try {
+                byte[] wasapiPcm = WasapiCaptureManager.StopAndGetPcm();
                 string tempPath = Path.GetTempPath();
                 string queryPath = Path.Combine(tempPath, "sphere_query.wav");
                 string srePath = Path.Combine(tempPath, "sphere_sre_audio.wav");
 
-                if (pcm != null && pcm.Length >= 1600) {
-                    WritePcmToWav(queryPath, pcm, 16000, 1, 16);
+                if (wasapiPcm != null && wasapiPcm.Length >= 8000) {
+                    WritePcmToWav(queryPath, wasapiPcm, 16000, 1, 16);
                     try { File.Copy(queryPath, srePath, true); } catch { }
+                } else {
+                    byte[] pcm;
+                    lock (pcmLock) {
+                        pcm = accumulatedListeningPcm.ToArray();
+                    }
+                    if (pcm != null && pcm.Length >= 1600) {
+                        WritePcmToWav(queryPath, pcm, 16000, 1, 16);
+                        try { File.Copy(queryPath, srePath, true); } catch { }
+                    }
+                }
+
+                string neural = RunNeuralTranscription(queryPath);
+                if (!string.IsNullOrWhiteSpace(neural) && neural.Length >= 2 && !IsWakeOnlyWord(neural)) {
+                    return neural;
                 }
             } catch { }
+            return fallbackText;
         }
 
         static void SaveAudioIfAvailable(RecognitionResult result) {
@@ -369,15 +640,40 @@ namespace SphereVoiceEngine {
                 using (MemoryStream ms = new MemoryStream()) {
                     result.Audio.WriteToWaveStream(ms);
                     byte[] wav = ms.ToArray();
-                    if (wav.Length > 44) {
-                        byte[] pcm = new byte[wav.Length - 44];
-                        Array.Copy(wav, 44, pcm, 0, pcm.Length);
+                    byte[] pcm = ExtractPcm(wav);
+                    if (pcm != null && pcm.Length > 0) {
                         lock (pcmLock) {
                             accumulatedListeningPcm.AddRange(pcm);
                         }
                     }
                 }
             } catch { }
+        }
+
+        static byte[] ExtractPcm(byte[] wav) {
+            if (wav == null || wav.Length < 44) return new byte[0];
+            for (int i = 0; i < wav.Length - 8; i++) {
+                if (wav[i] == 'd' && wav[i + 1] == 'a' && wav[i + 2] == 't' && wav[i + 3] == 'a') {
+                    int pcmStart = i + 8;
+                    int dataLen = BitConverter.ToInt32(wav, i + 4);
+                    if (dataLen > 0 && pcmStart + dataLen <= wav.Length) {
+                        byte[] pcm = new byte[dataLen];
+                        Array.Copy(wav, pcmStart, pcm, 0, dataLen);
+                        return pcm;
+                    } else if (pcmStart < wav.Length) {
+                        int pcmLen = wav.Length - pcmStart;
+                        byte[] pcm = new byte[pcmLen];
+                        Array.Copy(wav, pcmStart, pcm, 0, pcmLen);
+                        return pcm;
+                    }
+                }
+            }
+            if (wav.Length > 46) {
+                byte[] pcm = new byte[wav.Length - 46];
+                Array.Copy(wav, 46, pcm, 0, pcm.Length);
+                return pcm;
+            }
+            return new byte[0];
         }
 
         static bool IsExitPhrase(string text) {
@@ -569,6 +865,7 @@ namespace SphereVoiceEngine {
                 sre.AudioLevelUpdated += Sre_AudioLevelUpdated;
                 sre.SpeechDetected += Sre_SpeechDetected;
 
+                WasapiCaptureManager.Start();
                 SetMode(ServiceMode.Standby);
                 sre.RecognizeAsync(RecognizeMode.Multiple);
 
@@ -580,27 +877,46 @@ namespace SphereVoiceEngine {
                 cmdThread.Start();
 
                 while (true) {
-                    Thread.Sleep(80);
+                    Thread.Sleep(50);
                     lock (modeLock) {
                         if (currentMode == ServiceMode.Listening) {
                             TimeSpan elapsed = DateTime.UtcNow - wakeStartTime;
                             TimeSpan silence = DateTime.UtcNow - lastSpeechTime;
+                            if (WasapiCaptureManager.VoiceDetected) {
+                                TimeSpan wasapiSilence = DateTime.UtcNow - WasapiCaptureManager.LastVoiceTime;
+                                if (wasapiSilence < silence) silence = wasapiSilence;
+                            }
 
                             string bestText = !string.IsNullOrWhiteSpace(accumulatedListeningText) ? accumulatedListeningText : lastHypothesizedText;
                             bestText = StripWakePrefix(bestText);
 
-                            if (speechHeardInListening && silence.TotalMilliseconds >= 1800 && !string.IsNullOrWhiteSpace(bestText) && !IsWakeOnlyWord(bestText) && bestText.Length >= 2) {
-                                SaveAccumulatedAudio();
-                                Console.WriteLine("FINAL:" + bestText);
-                                Console.Out.Flush();
+                            bool hasSpeech = speechHeardInListening || WasapiCaptureManager.VoiceDetected;
+                            int sampleCount = WasapiCaptureManager.GetRecordedSampleCount();
+
+                            if (hasSpeech && sampleCount >= 8000 && silence.TotalMilliseconds >= 1200) {
+                                string finalText = SaveAccumulatedAudioAndTranscribe(bestText);
+                                finalText = StripWakePrefix(finalText);
+                                if (!string.IsNullOrWhiteSpace(finalText) && !IsWakeOnlyWord(finalText) && finalText.Length >= 2) {
+                                    Console.WriteLine("FINAL:" + finalText);
+                                    Console.Out.Flush();
+                                } else {
+                                    Console.WriteLine("TIMEOUT");
+                                    Console.Out.Flush();
+                                }
                                 accumulatedListeningText = "";
                                 lastHypothesizedText = "";
                                 SetMode(ServiceMode.Standby);
-                            } else if (elapsed.TotalSeconds > 8.5) {
-                                if (speechHeardInListening && !string.IsNullOrWhiteSpace(bestText) && !IsWakeOnlyWord(bestText) && bestText.Length >= 2) {
-                                    SaveAccumulatedAudio();
-                                    Console.WriteLine("FINAL:" + bestText);
-                                    Console.Out.Flush();
+                            } else if (elapsed.TotalSeconds > 8.0) {
+                                if (hasSpeech && sampleCount >= 8000) {
+                                    string finalText = SaveAccumulatedAudioAndTranscribe(bestText);
+                                    finalText = StripWakePrefix(finalText);
+                                    if (!string.IsNullOrWhiteSpace(finalText) && !IsWakeOnlyWord(finalText) && finalText.Length >= 2) {
+                                        Console.WriteLine("FINAL:" + finalText);
+                                        Console.Out.Flush();
+                                    } else {
+                                        Console.WriteLine("TIMEOUT");
+                                        Console.Out.Flush();
+                                    }
                                 } else {
                                     Console.WriteLine("TIMEOUT");
                                     Console.Out.Flush();
@@ -854,6 +1170,7 @@ namespace SphereVoiceEngine {
                         sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(250);
                         sre.InitialSilenceTimeout = TimeSpan.FromSeconds(5.0);
                     } catch { }
+                    WasapiCaptureManager.StopAndGetPcm();
                     wakeGrammar.Enabled = true;
                     wakeDictGrammar.Enabled = false;
                     dictGrammar.Enabled = false;
@@ -866,6 +1183,7 @@ namespace SphereVoiceEngine {
                         sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(1500);
                         sre.InitialSilenceTimeout = TimeSpan.FromSeconds(8.0);
                     } catch { }
+                    WasapiCaptureManager.StartRecordingQuery();
                     wakeGrammar.Enabled = false;
                     wakeDictGrammar.Enabled = false;
                     dictGrammar.Enabled = true;
@@ -881,6 +1199,7 @@ namespace SphereVoiceEngine {
                         sre.EndSilenceTimeout = TimeSpan.FromMilliseconds(250);
                         sre.EndSilenceTimeoutAmbiguous = TimeSpan.FromMilliseconds(300);
                     } catch { }
+                    WasapiCaptureManager.StopAndGetPcm();
                     wakeGrammar.Enabled = true;
                     wakeDictGrammar.Enabled = false;
                     dictGrammar.Enabled = false;
@@ -1054,13 +1373,7 @@ namespace SphereVoiceEngine {
                     string hypWakeQuery = null;
                     if (IsWakePhrase(hypText, out hypWakeQuery)) {
                         Console.WriteLine("WAKE");
-                        hypWakeQuery = StripWakePrefix(hypWakeQuery);
-                        if (!string.IsNullOrWhiteSpace(hypWakeQuery) && !IsWakeOnlyWord(hypWakeQuery) && hypWakeQuery.Length >= 2) {
-                            Console.WriteLine("FINAL:" + hypWakeQuery);
-                            SetMode(ServiceMode.Standby);
-                        } else {
-                            SetMode(ServiceMode.Listening);
-                        }
+                        SetMode(ServiceMode.Listening);
                         Console.Out.Flush();
                         return;
                     }
@@ -1144,13 +1457,7 @@ namespace SphereVoiceEngine {
                             return;
                         }
                         Console.WriteLine("WAKE");
-                        query = StripWakePrefix(query);
-                        if (!string.IsNullOrWhiteSpace(query) && !IsWakeOnlyWord(query) && query.Length >= 2) {
-                            Console.WriteLine("FINAL:" + query);
-                            SetMode(ServiceMode.Standby);
-                        } else {
-                            SetMode(ServiceMode.Listening);
-                        }
+                        SetMode(ServiceMode.Listening);
                         Console.Out.Flush();
                         return;
                     }
@@ -1291,13 +1598,7 @@ namespace SphereVoiceEngine {
                     string query;
                     if (!string.IsNullOrEmpty(text) && IsWakePhrase(text, out query)) {
                         Console.WriteLine("WAKE");
-                        query = StripWakePrefix(query);
-                        if (!string.IsNullOrWhiteSpace(query) && !IsWakeOnlyWord(query) && query.Length >= 2) {
-                            Console.WriteLine("FINAL:" + query);
-                            SetMode(ServiceMode.Standby);
-                        } else {
-                            SetMode(ServiceMode.Listening);
-                        }
+                        SetMode(ServiceMode.Listening);
                         Console.Out.Flush();
                         return;
                     }
@@ -1307,13 +1608,7 @@ namespace SphereVoiceEngine {
                             string altText = alt.Text ?? "";
                             if (!string.IsNullOrEmpty(altText) && IsWakePhrase(altText, out query)) {
                                 Console.WriteLine("WAKE");
-                                query = StripWakePrefix(query);
-                                if (!string.IsNullOrWhiteSpace(query) && !IsWakeOnlyWord(query) && query.Length >= 2) {
-                                    Console.WriteLine("FINAL:" + query);
-                                    SetMode(ServiceMode.Standby);
-                                } else {
-                                    SetMode(ServiceMode.Listening);
-                                }
+                                SetMode(ServiceMode.Listening);
                                 Console.Out.Flush();
                                 return;
                             }

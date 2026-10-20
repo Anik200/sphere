@@ -440,15 +440,6 @@ static const char *get_python_command(void) {
     static char s_py_cmd[MAX_PATH] = {0};
     if (s_py_cmd[0] != '\0') return s_py_cmd;
 
-    if (system("python --version >nul 2>&1") == 0) {
-        strcpy(s_py_cmd, "python");
-        return s_py_cmd;
-    }
-    if (system("py -3 --version >nul 2>&1") == 0) {
-        strcpy(s_py_cmd, "py -3");
-        return s_py_cmd;
-    }
-
     const char *local_app = getenv("LOCALAPPDATA");
     if (local_app) {
         char cand[MAX_PATH];
@@ -459,6 +450,15 @@ static const char *get_python_command(void) {
                 return s_py_cmd;
             }
         }
+    }
+
+    if (system("python --version >nul 2>&1") == 0) {
+        strcpy(s_py_cmd, "python");
+        return s_py_cmd;
+    }
+    if (system("py -3 --version >nul 2>&1") == 0) {
+        strcpy(s_py_cmd, "py -3");
+        return s_py_cmd;
     }
 
     strcpy(s_py_cmd, "python");

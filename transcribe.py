@@ -30,7 +30,7 @@ def clean_transcription(text: str) -> str:
     if not text:
         return ""
     text = text.strip()
-    pattern = r"^(hey\s+sphere|sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere|okay\s+sphere|wake\s+up\s+sphere|wake\s+up)[\s,.:!?-]*"
+    pattern = r"^(hey\s+sphere|sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere|okay\s+sphere|hey\s+spear|spear|i\s+swear|her\s+sphere|here\s+sphere|wake\s+up\s+sphere|wake\s+up)[\s,.:!?-]*"
     cleaned = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
     return cleaned
 
