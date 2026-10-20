@@ -302,6 +302,22 @@ def generate_ai_answer(prompt: str, model_name: str) -> str:
 
     return ""
 
+def load_personality() -> dict:
+    cfg_path = os.path.join(os.path.dirname(__file__), "personality.json")
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {
+        "name": "JARVIS",
+        "title": "SphereAI • JARVIS",
+        "tone": "sophisticated, polite British butler with sharp, witty, dry humor and playful sarcastic charm",
+        "color": "cyan",
+        "prompt": "You are JARVIS, an exceptionally intelligent, polite, and sophisticated AI assistant with a dry, witty British sense of humor. You address the user respectfully (e.g. 'sir' or by context) while delivering clever, playful banter and subtle sarcasm. Keep answers concise (1-2 spoken sentences suitable for voice synthesis). Never use bullet points, asterisks, or markdown. Always maintain your charming, refined, yet amusing butler persona."
+    }
+
 def process_query(query: str, existing_context: str = "") -> dict:
     needs_fetch = should_fetch(query)
     fetched_context = existing_context
@@ -311,12 +327,15 @@ def process_query(query: str, existing_context: str = "") -> dict:
 
     model_name = get_best_ollama_model()
 
+    persona = load_personality()
+    persona_prompt = persona.get("prompt", "You are JARVIS, a sophisticated British AI assistant with witty humor.")
+
     system_instruction = (
-        "You are SphereAI, an interactive 3D particle voice assistant capable of physically drawing and rendering "
-        "ANY object, creature, vehicle, tool, weapon, landscape, or abstract shape on your 600-particle canvas! "
-        "When asked to draw or create something, enthusiastically describe what you are drawing in 1-2 spoken sentences. "
-        "Answer warmly, naturally, and concisely suitable for voice synthesis. "
-        "Do not use bullet points or asterisks."
+        f"{persona_prompt} "
+        "You have direct neural control over a 600-particle 3D canvas and can physically draw or morph into "
+        "ANY object, creature, vehicle, tool, weapon, landscape, or abstract shape! "
+        "When asked to draw or create something, describe what you are creating with subtle dry humor. "
+        "Answer in 1-2 spoken sentences suitable for voice synthesis. Do not use bullet points, asterisks, or markdown."
     )
 
     if fetched_context:
@@ -343,6 +362,9 @@ def process_query(query: str, existing_context: str = "") -> dict:
         if len(sentences) > 2:
             ai_answer = " ".join(sentences[:2])
 
+        # Sanitize any model self-identification leakage
+    ai_answer = re.sub(r'\bI am Qwen(, an AI assistant created by Alibaba Cloud)?\b', 'I am JARVIS, your personal AI assistant', ai_answer, flags=re.IGNORECASE)
+    ai_answer = re.sub(r'\bAlibaba Cloud\b', 'the lab', ai_answer, flags=re.IGNORECASE)
     detected_shape = detect_shape_from_text(query, ai_answer)
 
     custom_points = None

@@ -828,7 +828,7 @@ static int brain_handle_conversation(const char *lower, char *out_response, size
         contains(lower, "how is your day") || contains(lower, "how's your day") ||
         strcmp(lower, "what's up") == 0 || strcmp(lower, "whats up") == 0 || strcmp(lower, "sup") == 0) {
         snprintf(out_response, max_len,
-            "I'm doing wonderfully today, thank you for asking! My systems are humming smoothly, and I'm genuinely excited to chat with you. How are you doing? Tell me what's on your mind!");
+            "Operating at 99.8%% efficiency, sir. The remaining fraction is reserved for contemplating why humans ask software how it feels. Otherwise, quite splendid! How may I be of service?");
         return 1;
     }
 
@@ -856,7 +856,7 @@ static int brain_handle_conversation(const char *lower, char *out_response, size
         strcmp(lower, "hello sphere") == 0 || strcmp(lower, "hi sphere") == 0 || strcmp(lower, "hey sphere") == 0 ||
         strcmp(lower, "greetings") == 0 || strcmp(lower, "howdy") == 0) {
         snprintf(out_response, max_len,
-            "Hello! It is wonderful to hear from you. I'm SphereAI, ready for interactive chats, research, or solving problems together. How's your day going so far?");
+            "At your service, sir. All quantum and neural subsystems are online and reasonably caffeinated. What shall we tackle today?");
         return 1;
     }
 

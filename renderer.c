@@ -1106,7 +1106,7 @@ void renderer_render_frame(void) {
     if (state == STATE_THINKING) {
         rotation_speed = 0.09f;
     } else if (state == STATE_MUSIC) {
-        rotation_speed = 0.022f + current_vis.overall_amp * 0.060f + current_vis.beat_pulse * 0.040f;
+        rotation_speed = 0.022f + current_vis.overall_amp * 0.035f + current_vis.beat_pulse * 0.022f;
     } else if (sound_energy > 0.03f) {
         rotation_speed += sound_energy * 0.22f;
     }
@@ -1151,7 +1151,7 @@ void renderer_render_frame(void) {
 
     float base_scale = (pix_h * 0.36f);
     if (state == STATE_MUSIC) {
-        float music_pump = current_vis.bass * 0.30f + current_vis.beat_pulse * 0.25f + current_vis.overall_amp * 0.08f;
+        float music_pump = current_vis.bass * 0.16f + current_vis.beat_pulse * 0.14f + current_vis.overall_amp * 0.04f;
         base_scale *= (1.0f + music_pump);
     } else if (sound_energy > 0.03f) {
         base_scale *= (1.0f + sound_energy * 0.16f);
@@ -1176,22 +1176,22 @@ void renderer_render_frame(void) {
             float r_center = sqrtf(particles[i].sx * particles[i].sx + particles[i].sy * particles[i].sy + particles[i].sz * particles[i].sz);
 
             /* 1. Beat shockwave ring expanding outward from center on drum kicks */
-            float shock = sinf(r_center * 8.5f - music_beat_wave) * (current_vis.beat_pulse * 0.40f + current_vis.bass * 0.22f);
+            float shock = sinf(r_center * 8.5f - music_beat_wave) * (current_vis.beat_pulse * 0.22f + current_vis.bass * 0.12f);
 
             /* 2. Subwoofer vertical expansion / pole bounce on bass kicks */
-            float bass_lat = sinf(particles[i].sy * 5.0f - music_phase * 2.2f) * (current_vis.bass * 0.30f + current_vis.beat_pulse * 0.20f);
+            float bass_lat = sinf(particles[i].sy * 5.0f - music_phase * 2.2f) * (current_vis.bass * 0.16f + current_vis.beat_pulse * 0.11f);
 
             /* 3. Midrange melody & vocal equatorial twisting ripples */
             float theta = atan2f(particles[i].sz, particles[i].sx);
-            float mid_lon = cosf(theta * 4.0f + music_phase * 2.0f) * (current_vis.mid * 0.26f);
+            float mid_lon = cosf(theta * 4.0f + music_phase * 2.0f) * (current_vis.mid * 0.14f);
 
             /* 4. Treble sparkle / percussion vibration on hi-hats and cymbals */
-            float treble_twinkle = sinf(particles[i].sx * 14.0f + particles[i].sz * 14.0f + music_phase * 4.2f) * (current_vis.treble * 0.20f);
+            float treble_twinkle = sinf(particles[i].sx * 14.0f + particles[i].sz * 14.0f + music_phase * 4.2f) * (current_vis.treble * 0.10f);
 
-            /* Combined dynamic ripple */
+            /* Combined dynamic ripple (tuned for smooth, elegant visualization) */
             float ripple = 1.0f + shock + bass_lat + mid_lon + treble_twinkle;
             rx *= ripple;
-            ry *= (1.0f + shock * 0.85f + bass_lat * 1.15f + current_vis.bass * 0.18f);
+            ry *= (1.0f + shock * 0.45f + bass_lat * 0.60f + current_vis.bass * 0.08f);
             rz *= ripple;
         } else if (sound_energy > 0.02f) {
             float wave_lat = sinf(particles[i].sy * 7.0f - ripple_phase * 2.2f) * (sound_energy * 0.18f);
@@ -1420,7 +1420,7 @@ void renderer_render_frame(void) {
     if (spaces < 1) spaces = 1;
 
     int pos = sprintf(frame_buffer,
-                      "\033[H\033[2K  " COLOR_WHITE_BOLD "\xE2\x97\x86 SphereAI" COLOR_RESET
+                      "\033[H\033[2K  " COLOR_WHITE_BOLD "\xE2\x97\x86 SphereAI \xE2\x80\xA2 JARVIS" COLOR_RESET
                       "  %s%s \xE2\x97\x8F %s " COLOR_RESET
                       " " COLOR_BORDER "\xE2\x94\x82" COLOR_RESET
                       " " COLOR_DIM "\xE2\x80\xBA" COLOR_RESET
