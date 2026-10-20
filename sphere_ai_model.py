@@ -8,6 +8,57 @@ import subprocess
 import time
 import shutil
 
+AVAILABLE_SHAPES = {
+    # Faces
+    "happy": ["happy", "smile", "smiling", "joyful"],
+    "sad": ["sad", "cry", "crying", "sob", "frown"],
+    "surprised": ["surprised", "surprise", "shocked", "gasp", "amazed"],
+    "angry": ["angry", "mad", "furious", "rage"],
+    "wink": ["wink", "winking"],
+    "cool": ["cool", "sunglasses", "shades"],
+    "silly": ["silly", "goofy", "tongue", "stick out your tongue", ":p"],
+    "laugh": ["laugh", "laughing", "xd", "chuckle"],
+    "confused": ["confused", "puzzled", "thinking", "?_?"],
+    "cat": ["cat", "kitty", "meow", ":3"],
+    "skull": ["skull", "skeleton", "spooky"],
+    # Gestures
+    "thumbs_up": ["thumbs up", "thumb up", "like", "approve", "good job"],
+    "peace": ["peace", "victory", "v sign"],
+    "wave": ["wave", "waving", "say hi", "hello", "greet"],
+    "rock": ["rock on", "metal", "horns"],
+    "ok": ["ok sign", "okay sign", "👌", "a-ok"],
+    # Figures & Shapes
+    "heart": ["heart", "love"],
+    "star": ["star"],
+    "cube": ["cube", "box", "3d cube"],
+    "pyramid": ["pyramid", "3d pyramid"],
+    "donut": ["donut", "torus"],
+    "spiral": ["spiral", "galaxy", "vortex"],
+    "flower": ["flower", "bloom", "blossom"],
+    "infinity": ["infinity", "loop", "lemniscate"],
+    "sphere": ["sphere", "reset", "normal"]
+}
+
+def detect_shape_from_text(query: str, response: str) -> str:
+    # 1. Check explicit tag like [shape: wave] or shape: wave
+    m = re.search(r"\[?\bshape\s*:\s*([a-zA-Z0-9_]+)\]?", response, re.IGNORECASE)
+    if m:
+        shape_cand = m.group(1).lower().strip()
+        if shape_cand in AVAILABLE_SHAPES:
+            return shape_cand
+        for shape, triggers in AVAILABLE_SHAPES.items():
+            if shape_cand in triggers:
+                return shape
+
+    # 2. Check query and response keywords
+    comb = (query + " " + response).lower()
+    for shape, triggers in AVAILABLE_SHAPES.items():
+        for trig in triggers:
+            if re.search(r"\b" + re.escape(trig) + r"\b", comb):
+                return shape
+
+    return ""
+
 FETCH_PATTERNS = [
     r"\b(weather|forecast|temperature|rain|snow|humidity)\b",
     r"\b(news|headline|latest|recent|current|today|tonight|yesterday|now)\b",
@@ -49,7 +100,6 @@ def fetch_wikipedia_info(query: str) -> str:
     encoded_q = urllib.parse.quote(cleaned)
 
     try:
-        # Search for canonical title
         search_url = f"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={encoded_q}&srlimit=1&format=json"
         req = urllib.request.Request(search_url, headers={"User-Agent": "SphereAI/2.0 (voice-client)"})
         with urllib.request.urlopen(req, timeout=3.0) as resp:
@@ -61,7 +111,6 @@ def fetch_wikipedia_info(query: str) -> str:
             if not title:
                 return ""
 
-        # Fetch lead extract
         ext_url = f"https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&titles={urllib.parse.quote(title)}&format=json"
         req2 = urllib.request.Request(ext_url, headers={"User-Agent": "SphereAI/2.0 (voice-client)"})
         with urllib.request.urlopen(req2, timeout=3.0) as resp2:
@@ -248,9 +297,16 @@ def process_query(query: str, existing_context: str = "") -> dict:
     model_name = get_best_ollama_model()
 
     system_instruction = (
-        "You are SphereAI, an intelligent 3D Braille voice assistant paired with pairing audio visualization. "
-        "Answer the user concisely in 1-2 spoken sentences suitable for voice synthesis. "
-        "Be clear, natural, and friendly. Do not use bullet points, asterisks, or markdown formatting."
+        "You are SphereAI, an interactive 3D particle voice assistant. "
+        "You have direct neural control over 600 glowing particles and can morph into funny faces, hand gestures, and 3D figures! "
+        "Supported shapes:\n"
+        "- Faces: happy, sad, surprised, angry, wink, cool, silly, laugh, confused, cat, skull\n"
+        "- Gestures: wave, thumbs_up, peace, rock, ok\n"
+        "- Figures: heart, star, cube, pyramid, donut, spiral, flower, infinity, sphere\n"
+        "When the user asks you to make a face, gesture, draw a shape/figure, or to express emotion visually, "
+        "add [shape: <shape_name>] at the end of your answer. "
+        "Answer warmly in 1-2 spoken sentences suitable for voice synthesis. "
+        "Do not use bullet points or asterisks."
     )
 
     if fetched_context:
@@ -277,6 +333,10 @@ def process_query(query: str, existing_context: str = "") -> dict:
         if len(sentences) > 2:
             ai_answer = " ".join(sentences[:2])
 
+    detected_shape = detect_shape_from_text(query, ai_answer)
+    # Remove any [shape: ...] tags from the spoken voice output
+    ai_answer = re.sub(r"\[?\bshape\s*:\s*[a-zA-Z0-9_]+\]?", "", ai_answer, flags=re.IGNORECASE).strip()
+
     is_happy = 0
     lower_ans = ai_answer.lower()
     if any(w in lower_ans for w in ["joy", "happy", "wonderful", "delighted", "awesome", "fantastic", "glad"]):
@@ -287,7 +347,8 @@ def process_query(query: str, existing_context: str = "") -> dict:
         "answer": ai_answer,
         "action": action,
         "model": model_name,
-        "is_happy": is_happy
+        "is_happy": is_happy,
+        "shape": detected_shape
     }
 
 def main():

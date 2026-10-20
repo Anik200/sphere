@@ -1,6 +1,7 @@
 #include "agent.h"
 #include "search.h"
 #include "brain.h"
+#include "renderer.h"
 #include <string.h>
 #include <ctype.h>
 
@@ -263,13 +264,13 @@ int agent_process_query(const char *query, char *out_response, size_t max_len, i
         return 1;
     }
 
-    /* 2. Intelligent small AI model reasoning (answers directly or fetches live facts depending on query) */
-    if (query_sphere_ai_model(query, "", out_response, max_len, out_is_happy)) {
+    /* 2. Fast direct personality, gestures, faces, and shapes */
+    if (brain_handle_direct(query, out_response, max_len, out_is_happy)) {
         return 1;
     }
 
-    /* 3. Robust fallback to native offline brain rules and knowledge */
-    if (brain_handle_direct(query, out_response, max_len, out_is_happy)) {
+    /* 3. Intelligent small AI model reasoning (answers directly or fetches live facts, controls particles) */
+    if (query_sphere_ai_model(query, "", out_response, max_len, out_is_happy)) {
         return 1;
     }
 

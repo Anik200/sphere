@@ -254,6 +254,543 @@ static void setup_expression_targets(BallExpression expr) {
             }
             break;
 
+        case EXPR_SILLY:
+            /* Winking left eye, open right eye, big smile, tongue sticking out */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 80) {
+                    float t = i / 80.0f;
+                    particles[i].tx = -0.52f + t * 0.28f;
+                    particles[i].ty = -0.30f - sinf(t * pi) * 0.12f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 180) {
+                    float a = ((i - 80) / 100.0f) * 2.0f * pi;
+                    particles[i].tx = 0.38f + cosf(a) * 0.18f;
+                    particles[i].ty = -0.30f + sinf(a) * 0.18f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 360) {
+                    float t = (i - 180) / 180.0f;
+                    float a = pi * 0.10f + t * pi * 0.80f;
+                    particles[i].tx = cosf(a) * 0.62f;
+                    particles[i].ty = sinf(a) * 0.44f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 540) {
+                    /* Funny tongue */
+                    float t = (i - 360) / 180.0f;
+                    float u = t * pi;
+                    particles[i].tx = cosf(u) * 0.16f;
+                    particles[i].ty = 0.30f + sinf(u) * 0.38f;
+                    particles[i].tz = 0.02f;
+                } else {
+                    /* Tongue center cleft line */
+                    float t = (i - 540) / (float)(NUM_PARTICLES - 540);
+                    particles[i].tx = 0.0f;
+                    particles[i].ty = 0.30f + t * 0.35f;
+                    particles[i].tz = 0.03f;
+                }
+            }
+            break;
+
+        case EXPR_LAUGH:
+            /* Squinched arch eyes, wide laughing open mouth, tear drops */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 120) {
+                    float t = i / 120.0f;
+                    particles[i].tx = -0.52f + t * 0.30f;
+                    particles[i].ty = -0.32f - sinf(t * pi) * 0.18f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 240) {
+                    float t = (i - 120) / 120.0f;
+                    particles[i].tx = 0.22f + t * 0.30f;
+                    particles[i].ty = -0.32f - sinf(t * pi) * 0.18f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 480) {
+                    /* Big open smiling mouth */
+                    float t = (i - 240) / 240.0f;
+                    if (t < 0.45f) {
+                        float u = t / 0.45f;
+                        particles[i].tx = -0.55f + u * 1.10f;
+                        particles[i].ty = 0.12f + sinf(u * pi) * 0.06f;
+                    } else {
+                        float u = (t - 0.45f) / 0.55f;
+                        float a = pi * 0.12f + u * pi * 0.76f;
+                        particles[i].tx = cosf(a) * 0.65f;
+                        particles[i].ty = sinf(a) * 0.65f;
+                    }
+                    particles[i].tz = 0.0f;
+                } else {
+                    /* Laugh tears */
+                    float t = (i - 480) / (float)(NUM_PARTICLES - 480);
+                    float side = (i % 2 == 0) ? -1.0f : 1.0f;
+                    particles[i].tx = side * (0.64f + t * 0.12f);
+                    particles[i].ty = -0.22f + t * 0.26f;
+                    particles[i].tz = 0.0f;
+                }
+            }
+            break;
+
+        case EXPR_CONFUSED:
+            /* High left brow, low flat right brow, wavy mouth */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 80) {
+                    float t = i / 80.0f;
+                    particles[i].tx = -0.58f + t * 0.38f;
+                    particles[i].ty = -0.62f - sinf(t * pi) * 0.12f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 160) {
+                    float t = (i - 80) / 80.0f;
+                    particles[i].tx = 0.20f + t * 0.38f;
+                    particles[i].ty = -0.36f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 270) {
+                    float a = ((i - 160) / 110.0f) * 2.0f * pi;
+                    particles[i].tx = -0.38f + cosf(a) * 0.20f;
+                    particles[i].ty = -0.24f + sinf(a) * 0.20f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 360) {
+                    float a = ((i - 270) / 90.0f) * 2.0f * pi;
+                    particles[i].tx = 0.38f + cosf(a) * 0.12f;
+                    particles[i].ty = -0.20f + sinf(a) * 0.08f;
+                    particles[i].tz = 0.0f;
+                } else {
+                    /* Wavy squiggle mouth */
+                    float t = (i - 360) / (float)(NUM_PARTICLES - 360);
+                    particles[i].tx = -0.48f + t * 0.96f;
+                    particles[i].ty = 0.38f + sinf(t * 3.0f * pi) * 0.12f;
+                    particles[i].tz = 0.0f;
+                }
+            }
+            break;
+
+        case EXPR_CAT:
+            /* Kitty face with pointy ears, cute eyes, nose, :3 mouth, and whiskers */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 60) {
+                    /* Left ear */
+                    float t = i / 60.0f;
+                    if (t < 0.5f) {
+                        float u = t / 0.5f;
+                        particles[i].tx = -0.55f + u * 0.18f;
+                        particles[i].ty = -0.22f - u * 0.44f;
+                    } else {
+                        float u = (t - 0.5f) / 0.5f;
+                        particles[i].tx = -0.37f + u * 0.17f;
+                        particles[i].ty = -0.66f + u * 0.32f;
+                    }
+                    particles[i].tz = 0.0f;
+                } else if (i < 120) {
+                    /* Right ear */
+                    float t = (i - 60) / 60.0f;
+                    if (t < 0.5f) {
+                        float u = t / 0.5f;
+                        particles[i].tx = 0.20f + u * 0.17f;
+                        particles[i].ty = -0.34f - u * 0.32f;
+                    } else {
+                        float u = (t - 0.5f) / 0.5f;
+                        particles[i].tx = 0.37f + u * 0.18f;
+                        particles[i].ty = -0.66f + u * 0.44f;
+                    }
+                    particles[i].tz = 0.0f;
+                } else if (i < 240) {
+                    /* Eyes */
+                    int e_idx = i - 120;
+                    float a = (e_idx % 60) / 60.0f * 2.0f * pi;
+                    float side = (e_idx < 60) ? -0.34f : 0.34f;
+                    particles[i].tx = side + cosf(a) * 0.14f;
+                    particles[i].ty = -0.12f + sinf(a) * 0.14f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 270) {
+                    /* Nose */
+                    float t = (i - 240) / 30.0f;
+                    float a = t * 2.0f * pi;
+                    particles[i].tx = cosf(a) * 0.06f;
+                    particles[i].ty = 0.08f + sinf(a) * 0.04f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 390) {
+                    /* Cat :3 mouth */
+                    int m_idx = i - 270;
+                    float t = (m_idx % 60) / 60.0f;
+                    float a = pi * 0.10f + t * pi * 0.85f;
+                    float center_x = (m_idx < 60) ? -0.15f : 0.15f;
+                    particles[i].tx = center_x + cosf(a) * 0.15f;
+                    particles[i].ty = 0.22f + sinf(a) * 0.15f;
+                    particles[i].tz = 0.0f;
+                } else {
+                    /* Whiskers (3 on each side) */
+                    int w_idx = i - 390;
+                    int count = NUM_PARTICLES - 390;
+                    float t = (w_idx % (count / 6)) / (float)(count / 6);
+                    int line = w_idx / (count / 6);
+                    float y_base = 0.10f + (line % 3) * 0.08f;
+                    float y_tip  = 0.06f + (line % 3) * 0.14f;
+                    float side   = (line < 3) ? -1.0f : 1.0f;
+                    particles[i].tx = side * (0.36f + t * 0.40f);
+                    particles[i].ty = y_base + (y_tip - y_base) * t;
+                    particles[i].tz = 0.0f;
+                }
+            }
+            break;
+
+        case EXPR_SKULL:
+            /* Cranium dome, large eye sockets, nasal hole, jaw teeth */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 160) {
+                    /* Cranium dome */
+                    float t = i / 160.0f;
+                    float a = pi * 0.95f + t * pi * 1.10f;
+                    particles[i].tx = cosf(a) * 0.58f;
+                    particles[i].ty = -0.15f + sinf(a) * 0.48f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 230) {
+                    /* Temples / cheekbone contour */
+                    float t = (i - 160) / 70.0f;
+                    float side = (i % 2 == 0) ? -1.0f : 1.0f;
+                    particles[i].tx = side * (0.55f - t * 0.18f);
+                    particles[i].ty = -0.10f + t * 0.42f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 350) {
+                    /* Eye sockets */
+                    int e_idx = i - 230;
+                    float a = (e_idx % 60) / 60.0f * 2.0f * pi;
+                    float side = (e_idx < 60) ? -0.28f : 0.28f;
+                    particles[i].tx = side + cosf(a) * 0.17f;
+                    particles[i].ty = -0.12f + sinf(a) * 0.19f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 400) {
+                    /* Inverted heart nasal cavity */
+                    float t = (i - 350) / 50.0f * 2.0f * pi;
+                    particles[i].tx = cosf(t) * 0.08f;
+                    particles[i].ty = 0.14f + sinf(t) * 0.10f;
+                    particles[i].tz = 0.0f;
+                } else {
+                    /* Teeth bars */
+                    int t_idx = i - 400;
+                    int count = NUM_PARTICLES - 400;
+                    int bar = (t_idx * 7) / count;
+                    float t = ((t_idx * 7) % count) / (float)(count / 7.0f);
+                    float x_pos = -0.30f + bar * 0.10f;
+                    particles[i].tx = x_pos;
+                    particles[i].ty = 0.38f + t * 0.22f;
+                    particles[i].tz = 0.0f;
+                }
+            }
+            break;
+
+        case EXPR_THUMBS_UP:
+            /* Clenched fist + prominent upright thumb */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 200) {
+                    /* Fist outline */
+                    float t = i / 200.0f;
+                    float a = t * 2.0f * pi;
+                    particles[i].tx = 0.0f + cosf(a) * 0.38f;
+                    particles[i].ty = 0.25f + sinf(a) * 0.32f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 320) {
+                    /* Knuckle ridges */
+                    int k_idx = i - 200;
+                    int kn = k_idx / 30;
+                    float t = (k_idx % 30) / 30.0f;
+                    particles[i].tx = 0.22f + sinf(t * pi) * 0.16f;
+                    particles[i].ty = 0.02f + kn * 0.14f;
+                    particles[i].tz = 0.0f;
+                } else {
+                    /* Prominent upright thumb */
+                    float t = (i - 320) / (float)(NUM_PARTICLES - 320);
+                    if (t < 0.70f) {
+                        float u = t / 0.70f;
+                        float side = (i % 2 == 0) ? -0.32f : -0.14f;
+                        particles[i].tx = side;
+                        particles[i].ty = 0.15f - u * 0.78f;
+                    } else {
+                        /* Rounded thumb tip */
+                        float u = (t - 0.70f) / 0.30f;
+                        float a = pi + u * pi;
+                        particles[i].tx = -0.23f + cosf(a) * 0.10f;
+                        particles[i].ty = -0.63f - sinf(a) * 0.10f;
+                    }
+                    particles[i].tz = 0.0f;
+                }
+            }
+            break;
+
+        case EXPR_PEACE:
+            /* Clenched fist base + index and middle fingers spread in V */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 220) {
+                    /* Fist base */
+                    float t = i / 220.0f * 2.0f * pi;
+                    particles[i].tx = cosf(t) * 0.34f;
+                    particles[i].ty = 0.30f + sinf(t) * 0.28f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 380) {
+                    /* Index finger angled left */
+                    float t = (i - 220) / 160.0f;
+                    float u = (i % 2 == 0) ? -0.06f : 0.06f;
+                    particles[i].tx = -0.12f - t * 0.22f + u;
+                    particles[i].ty = 0.05f - t * 0.72f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 540) {
+                    /* Middle finger angled right */
+                    float t = (i - 380) / 160.0f;
+                    float u = (i % 2 == 0) ? -0.06f : 0.06f;
+                    particles[i].tx = 0.12f + t * 0.22f + u;
+                    particles[i].ty = 0.05f - t * 0.72f;
+                    particles[i].tz = 0.0f;
+                } else {
+                    /* Folded thumb clasp */
+                    float t = (i - 540) / (float)(NUM_PARTICLES - 540);
+                    particles[i].tx = -0.15f + t * 0.30f;
+                    particles[i].ty = 0.16f + sinf(t * pi) * 0.08f;
+                    particles[i].tz = 0.02f;
+                }
+            }
+            break;
+
+        case EXPR_WAVE:
+            /* Open palm with 5 spread fingers */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 180) {
+                    /* Palm */
+                    float t = i / 180.0f * 2.0f * pi;
+                    particles[i].tx = cosf(t) * 0.28f;
+                    particles[i].ty = 0.30f + sinf(t) * 0.24f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 240) {
+                    /* Thumb sticking out to left */
+                    float t = (i - 180) / 60.0f;
+                    particles[i].tx = -0.22f - t * 0.32f;
+                    particles[i].ty = 0.20f - t * 0.18f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 330) {
+                    /* Index finger */
+                    float t = (i - 240) / 90.0f;
+                    particles[i].tx = -0.20f + ((i % 2 == 0) ? -0.04f : 0.04f);
+                    particles[i].ty = 0.06f - t * 0.65f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 420) {
+                    /* Middle finger */
+                    float t = (i - 330) / 90.0f;
+                    particles[i].tx = -0.04f + ((i % 2 == 0) ? -0.04f : 0.04f);
+                    particles[i].ty = 0.06f - t * 0.76f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 510) {
+                    /* Ring finger */
+                    float t = (i - 420) / 90.0f;
+                    particles[i].tx = 0.12f + ((i % 2 == 0) ? -0.04f : 0.04f);
+                    particles[i].ty = 0.06f - t * 0.66f;
+                    particles[i].tz = 0.0f;
+                } else {
+                    /* Pinky finger */
+                    float t = (i - 510) / (float)(NUM_PARTICLES - 510);
+                    particles[i].tx = 0.26f + ((i % 2 == 0) ? -0.04f : 0.04f);
+                    particles[i].ty = 0.10f - t * 0.52f;
+                    particles[i].tz = 0.0f;
+                }
+            }
+            break;
+
+        case EXPR_ROCK:
+            /* Fist base + index and pinky horns extended */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 240) {
+                    /* Palm / fist block */
+                    float t = i / 240.0f * 2.0f * pi;
+                    particles[i].tx = cosf(t) * 0.32f;
+                    particles[i].ty = 0.28f + sinf(t) * 0.26f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 380) {
+                    /* Index horn */
+                    float t = (i - 240) / 140.0f;
+                    float u = (i % 2 == 0) ? -0.05f : 0.05f;
+                    particles[i].tx = -0.28f + u;
+                    particles[i].ty = 0.06f - t * 0.74f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 520) {
+                    /* Pinky horn */
+                    float t = (i - 380) / 140.0f;
+                    float u = (i % 2 == 0) ? -0.05f : 0.05f;
+                    particles[i].tx = 0.28f + u;
+                    particles[i].ty = 0.06f - t * 0.74f;
+                    particles[i].tz = 0.0f;
+                } else {
+                    /* Folded middle/ring knuckle contours */
+                    float t = (i - 520) / (float)(NUM_PARTICLES - 520);
+                    particles[i].tx = -0.12f + t * 0.24f;
+                    particles[i].ty = 0.10f;
+                    particles[i].tz = 0.02f;
+                }
+            }
+            break;
+
+        case EXPR_OK:
+            /* Thumb and index ring + 3 extended fingers */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 220) {
+                    /* Thumb & index finger joined ring */
+                    float a = (i / 220.0f) * 2.0f * pi;
+                    particles[i].tx = -0.16f + cosf(a) * 0.22f;
+                    particles[i].ty = 0.12f + sinf(a) * 0.22f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 340) {
+                    /* Middle finger up */
+                    float t = (i - 220) / 120.0f;
+                    particles[i].tx = 0.06f + ((i % 2 == 0) ? -0.04f : 0.04f);
+                    particles[i].ty = 0.0f - t * 0.68f;
+                    particles[i].tz = 0.0f;
+                } else if (i < 460) {
+                    /* Ring finger up */
+                    float t = (i - 340) / 120.0f;
+                    particles[i].tx = 0.22f + ((i % 2 == 0) ? -0.04f : 0.04f);
+                    particles[i].ty = 0.02f - t * 0.62f;
+                    particles[i].tz = 0.0f;
+                } else {
+                    /* Pinky finger up */
+                    float t = (i - 460) / (float)(NUM_PARTICLES - 460);
+                    particles[i].tx = 0.36f + ((i % 2 == 0) ? -0.04f : 0.04f);
+                    particles[i].ty = 0.08f - t * 0.52f;
+                    particles[i].tz = 0.0f;
+                }
+            }
+            break;
+
+        case EXPR_HEART:
+            /* Parametric 3D pulsing heart */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                float t = (i / (float)NUM_PARTICLES) * 2.0f * pi;
+                float r_var = 0.90f + (i % 3) * 0.08f - 0.08f;
+                float sin_t = sinf(t);
+                float cos_t = cosf(t);
+                float x = 0.70f * sin_t * sin_t * sin_t;
+                float y = -0.02f - (13.0f * cos_t - 5.0f * cosf(2.0f * t) - 2.0f * cosf(3.0f * t) - cosf(4.0f * t)) * 0.042f;
+                particles[i].tx = x * r_var;
+                particles[i].ty = y * r_var;
+                particles[i].tz = (((i % 7) - 3) / 3.0f) * 0.20f;
+            }
+            break;
+
+        case EXPR_STAR:
+            /* 5-pointed star */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                int seg = (i * 10) / NUM_PARTICLES;
+                float t = ((i * 10) % NUM_PARTICLES) / (float)(NUM_PARTICLES / 10.0f);
+                float a0 = (seg * pi / 5.0f) - (pi / 2.0f);
+                float a1 = ((seg + 1) * pi / 5.0f) - (pi / 2.0f);
+                float r0 = (seg % 2 == 0) ? 0.72f : 0.30f;
+                float r1 = ((seg + 1) % 2 == 0) ? 0.72f : 0.30f;
+                float x0 = cosf(a0) * r0, y0 = sinf(a0) * r0;
+                float x1 = cosf(a1) * r1, y1 = sinf(a1) * r1;
+                particles[i].tx = x0 + (x1 - x0) * t;
+                particles[i].ty = y0 + (y1 - y0) * t;
+                particles[i].tz = 0.0f;
+            }
+            break;
+
+        case EXPR_CUBE:
+            /* 3D wireframe cube (12 edges) */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                int edge = (i * 12) / NUM_PARTICLES;
+                float t = ((i * 12) % NUM_PARTICLES) / (float)(NUM_PARTICLES / 12.0f);
+                float u = -0.48f + t * 0.96f;
+                float s = 0.48f;
+                switch (edge) {
+                    /* Bottom 4 edges */
+                    case 0: particles[i].tx = u;  particles[i].ty = s;  particles[i].tz = -s; break;
+                    case 1: particles[i].tx = s;  particles[i].ty = s;  particles[i].tz = u;  break;
+                    case 2: particles[i].tx = -u; particles[i].ty = s;  particles[i].tz = s;  break;
+                    case 3: particles[i].tx = -s; particles[i].ty = s;  particles[i].tz = -u; break;
+                    /* Top 4 edges */
+                    case 4: particles[i].tx = u;  particles[i].ty = -s; particles[i].tz = -s; break;
+                    case 5: particles[i].tx = s;  particles[i].ty = -s; particles[i].tz = u;  break;
+                    case 6: particles[i].tx = -u; particles[i].ty = -s; particles[i].tz = s;  break;
+                    case 7: particles[i].tx = -s; particles[i].ty = -s; particles[i].tz = -u; break;
+                    /* 4 vertical pillars */
+                    case 8:  particles[i].tx = -s; particles[i].ty = u; particles[i].tz = -s; break;
+                    case 9:  particles[i].tx = s;  particles[i].ty = u; particles[i].tz = -s; break;
+                    case 10: particles[i].tx = s;  particles[i].ty = u; particles[i].tz = s;  break;
+                    case 11: particles[i].tx = -s; particles[i].ty = u; particles[i].tz = s;  break;
+                }
+            }
+            break;
+
+        case EXPR_PYRAMID:
+            /* 3D 4-sided wireframe pyramid */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                int part = (i * 8) / NUM_PARTICLES;
+                float t = ((i * 8) % NUM_PARTICLES) / (float)(NUM_PARTICLES / 8.0f);
+                float b = 0.54f;
+                float apex_y = -0.65f, base_y = 0.50f;
+                switch (part) {
+                    /* 4 slant edges from apex */
+                    case 0: particles[i].tx = -b * t; particles[i].ty = apex_y + (base_y - apex_y) * t; particles[i].tz = -b * t; break;
+                    case 1: particles[i].tx = b * t;  particles[i].ty = apex_y + (base_y - apex_y) * t; particles[i].tz = -b * t; break;
+                    case 2: particles[i].tx = b * t;  particles[i].ty = apex_y + (base_y - apex_y) * t; particles[i].tz = b * t;  break;
+                    case 3: particles[i].tx = -b * t; particles[i].ty = apex_y + (base_y - apex_y) * t; particles[i].tz = b * t;  break;
+                    /* 4 base edges */
+                    case 4: particles[i].tx = -b + 2.0f * b * t; particles[i].ty = base_y; particles[i].tz = -b; break;
+                    case 5: particles[i].tx = b; particles[i].ty = base_y; particles[i].tz = -b + 2.0f * b * t; break;
+                    case 6: particles[i].tx = b - 2.0f * b * t;  particles[i].ty = base_y; particles[i].tz = b; break;
+                    case 7: particles[i].tx = -b; particles[i].ty = base_y; particles[i].tz = b - 2.0f * b * t; break;
+                }
+            }
+            break;
+
+        case EXPR_DONUT:
+            /* 3D Torus */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                float u = (i / 25) * (2.0f * pi / 24.0f);
+                float v = (i % 25) * (2.0f * pi / 25.0f);
+                float R = 0.52f, r = 0.22f;
+                particles[i].tx = (R + r * cosf(v)) * cosf(u);
+                particles[i].ty = (R + r * cosf(v)) * sinf(u);
+                particles[i].tz = r * sinf(v);
+            }
+            break;
+
+        case EXPR_SPIRAL:
+            /* Dual-arm galaxy spiral */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                float t = (i % (NUM_PARTICLES / 2)) / (float)(NUM_PARTICLES / 2);
+                float r = 0.08f + 0.62f * t;
+                float theta = t * 4.2f * 2.0f * pi + ((i >= NUM_PARTICLES / 2) ? pi : 0.0f);
+                particles[i].tx = cosf(theta) * r;
+                particles[i].ty = sinf(theta) * r;
+                particles[i].tz = sinf(theta * 2.0f) * 0.16f;
+            }
+            break;
+
+        case EXPR_FLOWER:
+            /* 6-petaled blooming flower */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                if (i < 120) {
+                    /* Central pistil ring */
+                    float a = (i / 120.0f) * 2.0f * pi;
+                    particles[i].tx = cosf(a) * 0.18f;
+                    particles[i].ty = sinf(a) * 0.18f;
+                    particles[i].tz = 0.0f;
+                } else {
+                    /* 6 Petals */
+                    float a = ((i - 120) / (float)(NUM_PARTICLES - 120)) * 2.0f * pi;
+                    float r = 0.22f + 0.48f * fabsf(sinf(a * 3.0f));
+                    particles[i].tx = cosf(a) * r;
+                    particles[i].ty = sinf(a) * r;
+                    particles[i].tz = 0.0f;
+                }
+            }
+            break;
+
+        case EXPR_INFINITY:
+            /* 3D Lemniscate ribbon */
+            for (int i = 0; i < NUM_PARTICLES; i++) {
+                float t = (i / (float)NUM_PARTICLES) * 2.0f * pi;
+                float sin_t = sinf(t);
+                float cos_t = cosf(t);
+                float denom = 1.0f + sin_t * sin_t;
+                particles[i].tx = (0.75f * cos_t) / denom;
+                particles[i].ty = (0.75f * sin_t * cos_t) / denom;
+                particles[i].tz = sinf(t * 2.0f) * 0.22f;
+            }
+            break;
+
         case EXPR_NONE:
         default:
             break;
@@ -334,7 +871,7 @@ void renderer_set_expression(BallExpression expr) {
     current_expression = expr;
     if (expr != EXPR_NONE) {
         setup_expression_targets(expr);
-        expression_countdown = 240;
+        expression_countdown = 400;
     } else {
         expression_countdown = 0;
     }
@@ -343,6 +880,71 @@ void renderer_set_expression(BallExpression expr) {
 
 BallExpression renderer_get_expression(void) {
     return current_expression;
+}
+
+BallExpression renderer_parse_expression_name(const char *name) {
+    if (!name || strlen(name) == 0) return EXPR_NONE;
+    if (strcasecmp(name, "happy") == 0 || strcasecmp(name, "smile") == 0 || strcasecmp(name, "smiling") == 0) return EXPR_HAPPY;
+    if (strcasecmp(name, "sad") == 0 || strcasecmp(name, "cry") == 0 || strcasecmp(name, "crying") == 0) return EXPR_SAD;
+    if (strcasecmp(name, "surprised") == 0 || strcasecmp(name, "shocked") == 0) return EXPR_SURPRISED;
+    if (strcasecmp(name, "angry") == 0 || strcasecmp(name, "mad") == 0) return EXPR_ANGRY;
+    if (strcasecmp(name, "wink") == 0 || strcasecmp(name, "winking") == 0) return EXPR_WINK;
+    if (strcasecmp(name, "cool") == 0 || strcasecmp(name, "sunglasses") == 0) return EXPR_COOL;
+    if (strcasecmp(name, "silly") == 0 || strcasecmp(name, "goofy") == 0 || strcasecmp(name, "tongue") == 0) return EXPR_SILLY;
+    if (strcasecmp(name, "laugh") == 0 || strcasecmp(name, "laughing") == 0) return EXPR_LAUGH;
+    if (strcasecmp(name, "confused") == 0 || strcasecmp(name, "thinking_face") == 0 || strcasecmp(name, "puzzled") == 0) return EXPR_CONFUSED;
+    if (strcasecmp(name, "cat") == 0 || strcasecmp(name, "kitty") == 0 || strcasecmp(name, "meow") == 0) return EXPR_CAT;
+    if (strcasecmp(name, "skull") == 0 || strcasecmp(name, "skeleton") == 0 || strcasecmp(name, "dead") == 0) return EXPR_SKULL;
+    if (strcasecmp(name, "thumbs_up") == 0 || strcasecmp(name, "thumb") == 0 || strcasecmp(name, "like") == 0) return EXPR_THUMBS_UP;
+    if (strcasecmp(name, "peace") == 0 || strcasecmp(name, "victory") == 0) return EXPR_PEACE;
+    if (strcasecmp(name, "wave") == 0 || strcasecmp(name, "waving") == 0 || strcasecmp(name, "hi") == 0 || strcasecmp(name, "hello") == 0) return EXPR_WAVE;
+    if (strcasecmp(name, "rock") == 0 || strcasecmp(name, "rock_on") == 0 || strcasecmp(name, "metal") == 0) return EXPR_ROCK;
+    if (strcasecmp(name, "ok") == 0 || strcasecmp(name, "okay") == 0) return EXPR_OK;
+    if (strcasecmp(name, "heart") == 0 || strcasecmp(name, "love") == 0) return EXPR_HEART;
+    if (strcasecmp(name, "star") == 0) return EXPR_STAR;
+    if (strcasecmp(name, "cube") == 0 || strcasecmp(name, "box") == 0) return EXPR_CUBE;
+    if (strcasecmp(name, "pyramid") == 0) return EXPR_PYRAMID;
+    if (strcasecmp(name, "donut") == 0 || strcasecmp(name, "torus") == 0) return EXPR_DONUT;
+    if (strcasecmp(name, "spiral") == 0 || strcasecmp(name, "galaxy") == 0) return EXPR_SPIRAL;
+    if (strcasecmp(name, "flower") == 0 || strcasecmp(name, "bloom") == 0) return EXPR_FLOWER;
+    if (strcasecmp(name, "infinity") == 0 || strcasecmp(name, "loop") == 0) return EXPR_INFINITY;
+    if (strcasecmp(name, "sphere") == 0 || strcasecmp(name, "none") == 0 || strcasecmp(name, "reset") == 0) return EXPR_NONE;
+    return EXPR_NONE;
+}
+
+const char *renderer_get_expression_name(BallExpression expr) {
+    switch (expr) {
+        case EXPR_HAPPY:     return "HAPPY SMILE";
+        case EXPR_SAD:       return "SAD FACE";
+        case EXPR_SURPRISED: return "SURPRISED";
+        case EXPR_ANGRY:     return "ANGRY FACE";
+        case EXPR_WINK:      return "WINK ;)";
+        case EXPR_COOL:      return "COOL B)";
+        case EXPR_SILLY:     return "SILLY TONGUE :P";
+        case EXPR_LAUGH:     return "LAUGHING XD";
+        case EXPR_CONFUSED:  return "CONFUSED ?_?";
+        case EXPR_CAT:       return "KITTY FACE :3";
+        case EXPR_SKULL:     return "SPOOKY SKULL";
+        case EXPR_THUMBS_UP: return "GESTURE: THUMBS UP";
+        case EXPR_PEACE:     return "GESTURE: PEACE";
+        case EXPR_WAVE:      return "GESTURE: WAVE";
+        case EXPR_ROCK:      return "GESTURE: ROCK ON";
+        case EXPR_OK:        return "GESTURE: OK";
+        case EXPR_HEART:     return "FIGURE: HEART";
+        case EXPR_STAR:      return "FIGURE: STAR";
+        case EXPR_CUBE:      return "FIGURE: 3D CUBE";
+        case EXPR_PYRAMID:   return "FIGURE: 3D PYRAMID";
+        case EXPR_DONUT:     return "FIGURE: 3D DONUT";
+        case EXPR_SPIRAL:    return "FIGURE: GALAXY SPIRAL";
+        case EXPR_FLOWER:    return "FIGURE: FLOWER";
+        case EXPR_INFINITY:  return "FIGURE: INFINITY";
+        default:             return "SPHERE";
+    }
+}
+
+void renderer_set_expression_by_name(const char *name) {
+    BallExpression expr = renderer_parse_expression_name(name);
+    renderer_set_expression(expr);
 }
 
 void renderer_set_custom_color(const char *ansi_color) {
@@ -559,9 +1161,42 @@ void renderer_render_frame(void) {
             rz *= ripple_repel;
         }
 
-        float fx = (1.0f - morph) * rx + morph * particles[i].tx;
-        float fy = (1.0f - morph) * ry + morph * particles[i].ty;
-        float fz = (1.0f - morph) * rz + morph * particles[i].tz;
+        float shape_tx = particles[i].tx;
+        float shape_ty = particles[i].ty;
+        float shape_tz = particles[i].tz;
+
+        if (current_expression == EXPR_CUBE || current_expression == EXPR_DONUT ||
+            current_expression == EXPR_PYRAMID || current_expression == EXPR_SPIRAL ||
+            current_expression == EXPR_INFINITY) {
+            float sa = angle * 0.75f;
+            float sp = angle * 0.40f;
+            float cos_sa = cosf(sa), sin_sa = sinf(sa);
+            float cos_sp = cosf(sp), sin_sp = sinf(sp);
+            float x1 = shape_tx * cos_sa - shape_tz * sin_sa;
+            float z1 = shape_tx * sin_sa + shape_tz * cos_sa;
+            float y1 = shape_ty * cos_sp - z1 * sin_sp;
+            z1       = shape_ty * sin_sp + z1 * cos_sp;
+            shape_tx = x1;
+            shape_ty = y1;
+            shape_tz = z1;
+        } else if (current_expression == EXPR_WAVE) {
+            float wave_angle = sinf(angle * 4.5f) * 0.20f;
+            float cos_w = cosf(wave_angle), sin_w = sinf(wave_angle);
+            float ox = shape_tx;
+            float oy = shape_ty - 0.40f;
+            shape_tx = ox * cos_w - oy * sin_w;
+            shape_ty = 0.40f + (ox * sin_w + oy * cos_w);
+        } else if (current_expression == EXPR_HEART) {
+            float beat = sinf(angle * 5.0f);
+            if (beat < 0.0f) beat = 0.0f;
+            float heart_pulse = 1.0f + 0.12f * beat * beat;
+            shape_tx *= heart_pulse;
+            shape_ty *= heart_pulse;
+        }
+
+        float fx = (1.0f - morph) * rx + morph * shape_tx;
+        float fy = (1.0f - morph) * ry + morph * shape_ty;
+        float fz = (1.0f - morph) * rz + morph * shape_tz;
 
         float fov = 2.6f / (2.6f - fz * 0.55f);
         int px = (int)(pix_w / 2.0f + fx * base_scale * fov);
@@ -578,7 +1213,28 @@ void renderer_render_frame(void) {
             case EXPR_ANGRY:     target_color = COLOR_RED; break;
             case EXPR_WINK:      target_color = COLOR_YELLOW; break;
             case EXPR_COOL:      target_color = COLOR_PURPLE_BRIGHT; break;
+            case EXPR_SILLY:     target_color = COLOR_YELLOW; break;
+            case EXPR_LAUGH:     target_color = COLOR_GOLD; break;
+            case EXPR_CONFUSED:  target_color = COLOR_ORANGE; break;
+            case EXPR_CAT:       target_color = COLOR_PINK; break;
+            case EXPR_SKULL:     target_color = COLOR_WHITE; break;
+            case EXPR_THUMBS_UP: target_color = COLOR_GOLD; break;
+            case EXPR_PEACE:     target_color = COLOR_GREEN; break;
+            case EXPR_WAVE:      target_color = COLOR_YELLOW; break;
+            case EXPR_ROCK:      target_color = COLOR_RED; break;
+            case EXPR_OK:        target_color = COLOR_GREEN_EMERALD; break;
+            case EXPR_HEART:     target_color = COLOR_RED; break;
+            case EXPR_STAR:      target_color = COLOR_GOLD; break;
+            case EXPR_CUBE:      target_color = COLOR_CYAN; break;
+            case EXPR_PYRAMID:   target_color = COLOR_GOLD; break;
+            case EXPR_DONUT:     target_color = COLOR_PURPLE_BRIGHT; break;
+            case EXPR_SPIRAL:    target_color = COLOR_CYAN; break;
+            case EXPR_FLOWER:    target_color = COLOR_PINK; break;
+            case EXPR_INFINITY:  target_color = COLOR_BLUE; break;
             default:             target_color = COLOR_GOLD; break;
+        }
+        if (custom_color[0] != '\0') {
+            target_color = custom_color;
         }
     } else {
         switch (state) {
@@ -623,8 +1279,13 @@ void renderer_render_frame(void) {
     const char *badge_bg = COLOR_PILL_BG;
     const char *meter_label = "MIC";
 
-    switch (state) {
-        case STATE_LISTENING:
+    if (morph > 0.35f && current_expression != EXPR_NONE) {
+        badge_name = renderer_get_expression_name(current_expression);
+        badge_color = target_color;
+        badge_bg = COLOR_PILL_BG;
+    } else {
+        switch (state) {
+            case STATE_LISTENING:
             badge_name = "LISTENING";
             badge_color = COLOR_PURPLE_BRIGHT;
             badge_bg = "\033[48;5;53m";
@@ -667,6 +1328,7 @@ void renderer_render_frame(void) {
             badge_bg = COLOR_PILL_BG;
             meter_label = "MIC";
             break;
+        }
     }
 
     int meter_len = 10;

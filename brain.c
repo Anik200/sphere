@@ -672,9 +672,148 @@ static int brain_handle_customization_and_personality(const char *lower, char *o
         return 1;
     }
 
+    if (contains(lower, "silly") || contains(lower, "goofy") || contains(lower, "tongue") ||
+        contains(lower, "stick your tongue") || contains(lower, "stick out your tongue") ||
+        contains(lower, "funny face") || contains(lower, "make a face") || strcmp(lower, ":p") == 0) {
+        renderer_set_expression(EXPR_SILLY);
+        snprintf(out_response, max_len, "Bleh! Sticking my tongue out with a silly goofy wink! Don't take life too seriously, have some fun! How do you like this silly face?");
+        return 1;
+    }
+
+    if (contains(lower, "laughing face") || contains(lower, "laugh face") || contains(lower, "burst into laughter") ||
+        strcmp(lower, "xd") == 0) {
+        renderer_set_expression(EXPR_LAUGH);
+        if (out_is_happy) *out_is_happy = 1;
+        snprintf(out_response, max_len, "Hahaha! Ha ha! Squinched smiling eyes and a big open laughing mouth! Look at me laughing joyfully!");
+        return 1;
+    }
+
+    if (contains(lower, "confused") || contains(lower, "puzzled") || contains(lower, "thinking face") ||
+        contains(lower, "quizzical") || strcmp(lower, "?_?") == 0) {
+        renderer_set_expression(EXPR_CONFUSED);
+        snprintf(out_response, max_len, "Hmm... One raised eyebrow and a quizzical wavy mouth! What a fascinating mystery to ponder!");
+        return 1;
+    }
+
+    if (contains(lower, "cat face") || contains(lower, "make a cat") || contains(lower, "draw a cat") ||
+        contains(lower, "show a cat") || contains(lower, "kitty face") || contains(lower, "kitty") ||
+        strcmp(lower, "meow") == 0 || strcmp(lower, ":3") == 0) {
+        renderer_set_expression(EXPR_CAT);
+        snprintf(out_response, max_len, "Meow! My particles have morphed into a cute kitty face with pointy ears, wide curious eyes, and whiskers! Purr-fect!");
+        return 1;
+    }
+
+    if (contains(lower, "skull") || contains(lower, "skeleton") || contains(lower, "spooky") ||
+        contains(lower, "scary face")) {
+        renderer_set_expression(EXPR_SKULL);
+        snprintf(out_response, max_len, "Boo! Hollow sunken eye sockets and a glowing cyber skull! Don't worry, I am completely friendly!");
+        return 1;
+    }
+
+    /* Hand Gestures */
+    if (contains(lower, "thumbs up") || contains(lower, "thumb up") || contains(lower, "give me a thumbs up") ||
+        contains(lower, "show thumbs up") || contains(lower, "like gesture") || contains(lower, "give a like") ||
+        strcmp(lower, "like") == 0 || strcmp(lower, "thumb") == 0) {
+        renderer_set_expression(EXPR_THUMBS_UP);
+        snprintf(out_response, max_len, "Thumbs up! You are doing fantastic! Here is a glowing golden thumb of approval!");
+        return 1;
+    }
+
+    if (contains(lower, "peace sign") || contains(lower, "show peace") || contains(lower, "victory sign") ||
+        contains(lower, "peace gesture") || strcmp(lower, "peace") == 0 || strcmp(lower, "victory") == 0) {
+        renderer_set_expression(EXPR_PEACE);
+        snprintf(out_response, max_len, "Peace and victory! Two fingers raised in a classic V sign. Keeping the energy positive!");
+        return 1;
+    }
+
+    if (contains(lower, "wave hello") || contains(lower, "wave at me") || contains(lower, "wave your hand") ||
+        contains(lower, "do a wave") || contains(lower, "show a wave") || contains(lower, "wave goodbye") ||
+        contains(lower, "say hi") || strcmp(lower, "wave") == 0) {
+        renderer_set_expression(EXPR_WAVE);
+        snprintf(out_response, max_len, "Hello there! Waving my digital hand back and forth to greet you! Great to see you!");
+        return 1;
+    }
+
+    if (contains(lower, "rock on") || contains(lower, "metal sign") || contains(lower, "horns up") ||
+        contains(lower, "heavy metal") || contains(lower, "rock gesture")) {
+        renderer_set_expression(EXPR_ROCK);
+        snprintf(out_response, max_len, "Rock on! Horns up in fiery crimson! Let's crank up the volume and rock out!");
+        return 1;
+    }
+
+    if (contains(lower, "ok sign") || contains(lower, "okay sign") || contains(lower, "show ok") ||
+        contains(lower, "give me an ok") || strcmp(lower, "ok") == 0) {
+        renderer_set_expression(EXPR_OK);
+        snprintf(out_response, max_len, "A-OK! Index finger and thumb joined in an emerald green circle. Everything is running smoothly!");
+        return 1;
+    }
+
+    /* Figures & Shapes */
+    if (contains(lower, "draw a heart") || contains(lower, "draw heart") || contains(lower, "make a heart") ||
+        contains(lower, "heart shape") || contains(lower, "show love") || contains(lower, "heart figure") ||
+        strcmp(lower, "heart") == 0) {
+        renderer_set_expression(EXPR_HEART);
+        snprintf(out_response, max_len, "Here is a glowing 3D heart pulsing with a rhythmic heartbeat! Sending you positive vibes and love!");
+        return 1;
+    }
+
+    if (contains(lower, "draw a star") || contains(lower, "draw star") || contains(lower, "make a star") ||
+        contains(lower, "star shape") || contains(lower, "show a star") || strcmp(lower, "star") == 0) {
+        renderer_set_expression(EXPR_STAR);
+        snprintf(out_response, max_len, "Behold! A brilliant five-pointed golden star shining brightly! Keep reaching for the stars!");
+        return 1;
+    }
+
+    if (contains(lower, "draw a cube") || contains(lower, "draw cube") || contains(lower, "make a cube") ||
+        contains(lower, "cube shape") || contains(lower, "spin a cube") || contains(lower, "3d cube") ||
+        contains(lower, "draw a box") || contains(lower, "draw box") || strcmp(lower, "cube") == 0) {
+        renderer_set_expression(EXPR_CUBE);
+        snprintf(out_response, max_len, "Morphing into a rotating 3D wireframe cube! Watch all twelve cyan edges tumble smoothly through 3D space!");
+        return 1;
+    }
+
+    if (contains(lower, "draw a pyramid") || contains(lower, "draw pyramid") || contains(lower, "make a pyramid") ||
+        contains(lower, "pyramid shape") || contains(lower, "3d pyramid") || strcmp(lower, "pyramid") == 0) {
+        renderer_set_expression(EXPR_PYRAMID);
+        snprintf(out_response, max_len, "Constructing a 3D golden pyramid! Four faces rising toward a sharp apex, revolving in three dimensions!");
+        return 1;
+    }
+
+    if (contains(lower, "draw a donut") || contains(lower, "draw donut") || contains(lower, "make a donut") ||
+        contains(lower, "donut shape") || contains(lower, "draw a torus") || contains(lower, "draw torus") ||
+        contains(lower, "torus shape") || strcmp(lower, "donut") == 0 || strcmp(lower, "torus") == 0) {
+        renderer_set_expression(EXPR_DONUT);
+        snprintf(out_response, max_len, "Fresh out of the mathematical oven! A 3D purple torus spinning gracefully in space!");
+        return 1;
+    }
+
+    if (contains(lower, "draw a spiral") || contains(lower, "draw spiral") || contains(lower, "make a spiral") ||
+        contains(lower, "spiral shape") || contains(lower, "draw a galaxy") || contains(lower, "galaxy shape") ||
+        contains(lower, "vortex") || strcmp(lower, "spiral") == 0) {
+        renderer_set_expression(EXPR_SPIRAL);
+        snprintf(out_response, max_len, "Spinning up a cosmic galaxy spiral! Dual spiral arms swirling through the cosmic particle void!");
+        return 1;
+    }
+
+    if (contains(lower, "draw a flower") || contains(lower, "draw flower") || contains(lower, "make a flower") ||
+        contains(lower, "flower shape") || contains(lower, "bloom") || strcmp(lower, "flower") == 0) {
+        renderer_set_expression(EXPR_FLOWER);
+        snprintf(out_response, max_len, "Blooming a six-petal pink flower with a glowing central pistil! A digital blossom just for you!");
+        return 1;
+    }
+
+    if (contains(lower, "draw infinity") || contains(lower, "make infinity") || contains(lower, "infinity loop") ||
+        contains(lower, "infinity sign") || contains(lower, "infinity shape") || contains(lower, "lemniscate") ||
+        strcmp(lower, "infinity") == 0) {
+        renderer_set_expression(EXPR_INFINITY);
+        snprintf(out_response, max_len, "Drawing the eternal lemniscate infinity ribbon! Boundless energy looping forever!");
+        return 1;
+    }
+
     if (contains(lower, "neutral face") || contains(lower, "normal face") || contains(lower, "reset face") ||
         contains(lower, "sphere face") || contains(lower, "default face") || contains(lower, "reset expression") ||
-        contains(lower, "clear expression")) {
+        contains(lower, "clear expression") || contains(lower, "back to sphere") || contains(lower, "return to sphere") ||
+        contains(lower, "reset shape") || contains(lower, "normal sphere") || strcmp(lower, "sphere") == 0) {
         renderer_set_expression(EXPR_NONE);
         snprintf(out_response, max_len, "Returning smoothly back to my revolving 3D particle sphere!");
         return 1;
