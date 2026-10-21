@@ -621,7 +621,7 @@ static int brain_handle_customization_and_personality(const char *lower, char *o
     if (contains(lower, "angry") || contains(lower, "mad") || contains(lower, "furious") ||
         contains(lower, "rage") || contains(lower, "look mad") || contains(lower, "be mad")) {
         renderer_set_expression(EXPR_ANGRY);
-        snprintf(out_response, max_len, "Grrr! Fierce V-shaped eyebrows and an intense crimson red glow! Look at my angry face! Don't mess with Sphere AI!");
+        snprintf(out_response, max_len, "Grrr! Fierce V-shaped eyebrows and an intense crimson red glow! Look at my angry face! Don't mess with Spike!");
         return 1;
     }
 
@@ -849,11 +849,11 @@ static int brain_handle_conversation(const char *lower, char *out_response, size
     }
     if (contains(lower, "good night") || contains(lower, "going to sleep") || contains(lower, "going to bed") || contains(lower, "sweet dreams")) {
         snprintf(out_response, max_len,
-            "Good night! Have a peaceful, restful sleep with pleasant dreams. Whenever you want to chat again, just say \"Hey Sphere\". Rest well!");
+            "Good night! Have a peaceful, restful sleep with pleasant dreams. Whenever you want to chat again, just say \"Hey Spike\". Rest well!");
         return 1;
     }
     if (strcmp(lower, "hello") == 0 || strcmp(lower, "hi") == 0 || strcmp(lower, "hey") == 0 ||
-        strcmp(lower, "hello sphere") == 0 || strcmp(lower, "hi sphere") == 0 || strcmp(lower, "hey sphere") == 0 ||
+        strcmp(lower, "hello spike") == 0 || strcmp(lower, "hi spike") == 0 || strcmp(lower, "hey spike") == 0 || strcmp(lower, "listen spike") == 0 || strcmp(lower, "listen") == 0 || strcmp(lower, "spike wake up") == 0 || strcmp(lower, "hello sphere") == 0 || strcmp(lower, "hi sphere") == 0 || strcmp(lower, "hey sphere") == 0 ||
         strcmp(lower, "greetings") == 0 || strcmp(lower, "howdy") == 0) {
         snprintf(out_response, max_len,
             "At your service, sir. All quantum and neural subsystems are online and reasonably caffeinated. What shall we tackle today?");
@@ -888,7 +888,7 @@ static int brain_handle_conversation(const char *lower, char *out_response, size
     if (contains(lower, "who are you") || contains(lower, "what are you") || contains(lower, "who made you") ||
         contains(lower, "who created you") || contains(lower, "tell me about yourself")) {
         snprintf(out_response, max_len,
-            "I am SphereAI, your fast native voice describing agent! I run locally on your computer with zero GPU usage, calculating mathematics, researching real-world phenomena, and chatting with you in real time. I love curious questions and interactive conversations!");
+            "I am Spike, your fast native voice assistant! I run locally on your computer with zero GPU usage, calculating mathematics, researching real-world phenomena, and chatting with you in real time. I love curious questions and interactive conversations!");
         return 1;
     }
     if (contains(lower, "do you have feelings") || contains(lower, "are you alive") || contains(lower, "are you conscious") ||
@@ -1469,7 +1469,7 @@ int brain_handle_direct(const char *user_query, char *out_response, size_t max_l
     if (contains(lower, "chat with me") || contains(lower, "can we chat") || contains(lower, "talk to me") ||
         contains(lower, "interactive chat") || strcmp(lower, "can you talk") == 0 || strcmp(lower, "can we talk") == 0) {
         snprintf(out_response, max_len,
-            "I am SphereAI, ready for interactive chats! You can ask me curious science questions like why spiders hang upside down, solve math, learn about space, or explore physical objects. What's on your mind?");
+            "I am Spike, ready for interactive chats! You can ask me curious science questions like why spiders hang upside down, solve math, learn about space, or explore physical objects. What's on your mind?");
         return 1;
     }
     if (contains(lower, "what can you do") || contains(lower, "what are your capabilities") ||

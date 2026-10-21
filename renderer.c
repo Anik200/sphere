@@ -1420,7 +1420,7 @@ void renderer_render_frame(void) {
     if (spaces < 1) spaces = 1;
 
     int pos = sprintf(frame_buffer,
-                      "\033[H\033[2K  " COLOR_WHITE_BOLD "\xE2\x97\x86 SphereAI \xE2\x80\xA2 JARVIS" COLOR_RESET
+                      "\033[H\033[2K  " COLOR_WHITE_BOLD "\xE2\x97\x86 Spike" COLOR_RESET
                       "  %s%s \xE2\x97\x8F %s " COLOR_RESET
                       " " COLOR_BORDER "\xE2\x94\x82" COLOR_RESET
                       " " COLOR_DIM "\xE2\x80\xBA" COLOR_RESET
@@ -1489,11 +1489,15 @@ void renderer_render_frame(void) {
     if (current_input_buffer[0] != '\0') {
         pos += sprintf(&frame_buffer[pos], "\033[2K  " COLOR_CYAN "User" COLOR_RESET " " COLOR_DIM "\xE2\x80\xBA" COLOR_RESET " " COLOR_WHITE_BOLD "%s\033[7m \033[0m\n", current_input_buffer);
     } else if (current_subtitle[0] != '\0') {
-        const char *tag = "Sphere";
+        const char *tag = "Spike";
         const char *tag_color = COLOR_PURPLE;
         const char *text = current_subtitle;
-        if (strncmp(current_subtitle, "Sphere: ", 8) == 0) {
-            tag = "Sphere";
+        if (strncmp(current_subtitle, "Spike: ", 7) == 0) {
+            tag = "Spike";
+            tag_color = COLOR_PURPLE;
+            text = current_subtitle + 7;
+        } else if (strncmp(current_subtitle, "Sphere: ", 8) == 0) {
+            tag = "Spike";
             tag_color = COLOR_PURPLE;
             text = current_subtitle + 8;
         } else if (strncmp(current_subtitle, "> ", 2) == 0) {
@@ -1539,7 +1543,7 @@ void renderer_render_frame(void) {
     pos += sprintf(&frame_buffer[pos], "\033[2K  "
                    COLOR_PILL_BG COLOR_WHITE_BOLD " Space " COLOR_RESET " " COLOR_DIM "Talk" COLOR_RESET "  "
                    COLOR_PILL_BG COLOR_WHITE_BOLD " Enter " COLOR_RESET " " COLOR_DIM "Submit" COLOR_RESET "  "
-                   COLOR_PILL_BG COLOR_PURPLE " \"Hey Sphere\" " COLOR_RESET " " COLOR_DIM "Wake" COLOR_RESET "  "
+                   COLOR_PILL_BG COLOR_PURPLE " \"Hey Spike\" " COLOR_RESET " " COLOR_DIM "Wake" COLOR_RESET "  "
                    COLOR_PILL_BG COLOR_WHITE_BOLD " Esc " COLOR_RESET " " COLOR_DIM "Exit" COLOR_RESET "\033[J");
 
     unlock_renderer();

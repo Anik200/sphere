@@ -507,23 +507,23 @@ namespace SphereVoiceEngine {
         }
 
         static readonly Regex ExitWordRegex = new Regex(
-            @"^(close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shutdown\s+sphere|shut\s+down\s+sphere|terminate\s+sphere)$",
+            @"^(close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shutdown\s+spike|shut\s+down\s+spike|terminate\s+spike|shutdown\s+sphere|shut\s+down\s+sphere|terminate\s+sphere)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex ExitWakeRegex = new Regex(
-            @"^(hey\s+sphere|sphere|her\s+sphere|hi\s+sphere|hello\s+sphere)\s+(close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shutdown\s+sphere|shut\s+down\s+sphere|terminate\s+sphere)$",
+            @"^(hey\s+spike|spike|listen\s+spike|listen|spike\s+wake\s+up|wake\s+up\s+spike|hey\s+sphere|sphere|her\s+sphere|hi\s+sphere|hello\s+sphere)\s+(close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shutdown\s+spike|shut\s+down\s+spike|terminate\s+spike|shutdown\s+sphere|shut\s+down\s+sphere|terminate\s+sphere)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex BargeInStopRegex = new Regex(
-            @"^(hey\s+sphere\s+|sphere\s+|hi\s+sphere\s+|hello\s+sphere\s+|hey\s+spear\s+|spear\s+)?(stop|be\s+quiet|shut\s+up|pause|cancel|stop\s+talking|stop\s+it|stop\s+music|stop\s+the\s+music|stop\s+playing|pause\s+music|pause\s+song|stop\s+song|quiet|silence|enough|halt|skip|next)$",
+            @"^(hey\s+spike\s+|spike\s+|listen\s+spike\s+|listen\s+|spike\s+wake\s+up\s+|wake\s+up\s+spike\s+|hey\s+sphere\s+|sphere\s+|hi\s+sphere\s+|hello\s+sphere\s+|hey\s+spear\s+|spear\s+)?(stop|be\s+quiet|shut\s+up|pause|cancel|stop\s+talking|stop\s+it|stop\s+music|stop\s+the\s+music|stop\s+playing|pause\s+music|pause\s+song|stop\s+song|quiet|silence|enough|halt|skip|next)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex BargeInWakeRegex = new Regex(
-            @"^(hey\s+sphere|sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere|okay\s+sphere|yo\s+sphere|hey\s+spear|spear|wake\s+up\s+sphere|wake\s+up|her\s+sphere|here\s+sphere|hey\s+fear|hey\s+spare|hay\s+sphere)(\s+(?<q>.*))?$",
+            @"^(hey\s+spike|spike\s+wake\s+up|wake\s+up\s+spike|listen\s+spike|listen|spike|hi\s+spike|hello\s+spike|ok\s+spike|okay\s+spike|yo\s+spike|hey\s+sphere|sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere|okay\s+sphere|yo\s+sphere|hey\s+spear|spear|wake\s+up\s+sphere|wake\s+up|her\s+sphere|here\s+sphere|hey\s+fear|hey\s+spare|hay\s+sphere)(\s+(?<q>.*))?$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly Regex BargeInExitRegex = new Regex(
-            @"^(hey\s+sphere\s+|sphere\s+)?(close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shutdown\s+sphere|shut\s+down\s+sphere|terminate\s+sphere)$",
+            @"^(hey\s+spike\s+|spike\s+|listen\s+spike\s+|listen\s+|hey\s+sphere\s+|sphere\s+)?(close\s+app|close\s+the\s+app|exit\s+app|exit\s+the\s+app|quit\s+app|shutdown\s+spike|shut\s+down\s+spike|terminate\s+spike|shutdown\s+sphere|shut\s+down\s+sphere|terminate\s+sphere)$",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         static readonly System.Collections.Generic.List<byte> accumulatedListeningPcm = new System.Collections.Generic.List<byte>();
@@ -708,6 +708,7 @@ namespace SphereVoiceEngine {
 
         static void Main(string[] args) {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.InputEncoding = System.Text.Encoding.UTF8;
             Console.WriteLine("STATUS:INITIALIZING");
             Console.Out.Flush();
 
@@ -793,6 +794,10 @@ namespace SphereVoiceEngine {
                 } catch { }
 
                 Choices wakeChoices = new Choices(new string[] {
+                    "hey spike", "spike", "spike wake up", "wake up spike", "listen spike", "listen",
+                    "hi spike", "hello spike", "ok spike", "okay spike", "yo spike",
+                    "hey spik", "spik", "spyke", "hey spyke", "hey bike",
+                    "hey spike play", "spike play", "listen play",
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                     "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
                     "hey sfeer", "sfeer", "hey sfear", "sfear",
@@ -814,6 +819,10 @@ namespace SphereVoiceEngine {
                 try { sre.LoadGrammar(wakeGrammar); } catch { }
 
                 Choices wakePrefixChoices = new Choices(new string[] {
+                    "hey spike", "spike", "spike wake up", "wake up spike", "listen spike", "listen",
+                    "hi spike", "hello spike", "ok spike", "okay spike", "yo spike",
+                    "hey spik", "spik", "spyke", "hey spyke", "hey bike",
+                    "hey spike play", "spike play", "listen play",
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                     "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
                     "hey sfeer", "sfeer", "hey sfear", "sfear",
@@ -842,6 +851,13 @@ namespace SphereVoiceEngine {
                     "stop", "stop it", "stop music", "stop the music", "stop song", "stop playing", "stop talking",
                     "pause", "pause music", "pause the music", "pause song",
                     "be quiet", "quiet", "shut up", "silence", "enough", "cancel", "halt", "skip", "next",
+                    "hey spike", "spike", "spike wake up", "wake up spike", "listen spike", "listen",
+                    "hi spike", "hello spike", "ok spike", "okay spike", "yo spike",
+                    "hey spike stop", "spike stop", "hey spike shut up", "spike shut up",
+                    "hey spike pause", "spike pause", "hey spike be quiet", "spike be quiet",
+                    "hey spike quiet", "spike quiet", "hey spike cancel", "spike cancel",
+                    "hey spike stop music", "spike stop music", "hey spike pause music", "spike pause music",
+                    "hey spike exit", "spike exit", "hey spike quit", "spike quit", "hey spike goodbye",
                     "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                     "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
                     "hey fear", "hi fear", "her sphere", "here sphere", "wake up sphere", "wake up",
@@ -939,6 +955,9 @@ namespace SphereVoiceEngine {
             if (string.IsNullOrWhiteSpace(text)) return true;
             string clean = text.Trim().ToLowerInvariant().Trim('.', '?', '!', ',', ' ', '"', '\'', '-', ':');
             string[] wakes = new string[] {
+                "hey spike", "spike", "spike wake up", "wake up spike", "listen spike", "listen",
+                "hi spike", "hello spike", "ok spike", "okay spike", "yo spike",
+                "hey spik", "spik", "spyke", "hey spyke",
                 "hey sphere", "sphere", "hi sphere", "hello sphere", "ok sphere", "okay sphere", "yo sphere",
                 "hey spear", "spear", "hi spear", "hello spear", "ok spear", "okay spear",
                 "hey sfeer", "sfeer", "hey sfear", "sfear",
@@ -959,6 +978,9 @@ namespace SphereVoiceEngine {
             string clean = text.Trim();
             string lower = clean.ToLowerInvariant();
             string[] prefixes = new string[] {
+                "hey, spike", "hey spike", "spike wake up", "wake up spike", "listen, spike", "listen spike", "listen",
+                "hi, spike", "hi spike", "hello, spike", "hello spike", "ok, spike", "ok spike", "okay, spike", "okay spike",
+                "yo, spike", "yo spike", "spike",
                 "hey, sphere", "hey sphere", "hi, sphere", "hi sphere", "hello, sphere", "hello sphere",
                 "ok, sphere", "ok sphere", "okay, sphere", "okay sphere", "yo, sphere", "yo sphere",
                 "hey, spear", "hey spear", "hi, spear", "hi spear", "hello, spear", "hello sphere",
@@ -993,6 +1015,11 @@ namespace SphereVoiceEngine {
             string lower = text.ToLowerInvariant().Trim();
 
             string[] sphereKeywords = new string[] {
+                "hey, spike play", "hey spike play", "spike play", "listen play",
+                "hey, spike", "hey spike", "spike wake up", "wake up spike", "listen, spike", "listen spike", "listen",
+                "hi, spike", "hi spike", "hello, spike", "hello spike",
+                "ok, spike", "ok spike", "okay, spike", "okay spike", "yo, spike", "yo spike",
+                "spike",
                 "hey, sphere play", "hey sphere play", "sphere play",
                 "hey, sphere", "hey sphere", "hi, sphere", "hi sphere", "hello, sphere", "hello sphere",
                 "ok, sphere", "ok sphere", "okay, sphere", "okay sphere", "yo, sphere", "yo sphere",

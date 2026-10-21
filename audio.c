@@ -504,10 +504,10 @@ static void strip_wake_prefix(char *text) {
     lower[len] = '\0';
 
     const char *greetings[] = {
-        "hey", "hi", "hello", "ok", "okay", "yo", "ay", "hay", "her", "here", "hear", "wake up", "the", "a"
+        "hey", "hi", "hello", "ok", "okay", "yo", "ay", "hay", "her", "here", "hear", "wake up", "listen", "the", "a"
     };
     const char *sphere_names[] = {
-        "sphere", "spear", "fear", "spare", "sphear"
+        "spike", "spik", "spyke", "sphere", "spear", "fear", "spare", "sphear"
     };
 
     const char *p = lower;
@@ -541,7 +541,12 @@ static void strip_wake_prefix(char *text) {
         }
     }
 
-    if (strcmp(lower, "hey sphere") == 0 || strcmp(lower, "sphere") == 0 ||
+    if (strcmp(lower, "hey spike") == 0 || strcmp(lower, "spike") == 0 ||
+        strcmp(lower, "spike wake up") == 0 || strcmp(lower, "wake up spike") == 0 ||
+        strcmp(lower, "listen spike") == 0 || strcmp(lower, "listen") == 0 ||
+        strcmp(lower, "hi spike") == 0 || strcmp(lower, "hello spike") == 0 ||
+        strcmp(lower, "ok spike") == 0 || strcmp(lower, "okay spike") == 0 ||
+        strcmp(lower, "hey sphere") == 0 || strcmp(lower, "sphere") == 0 ||
         strcmp(lower, "hi sphere") == 0 || strcmp(lower, "hello sphere") == 0 ||
         strcmp(lower, "ok sphere") == 0 || strcmp(lower, "okay sphere") == 0 ||
         strcmp(lower, "spear") == 0 || strcmp(lower, "hey spear") == 0 ||
@@ -763,7 +768,7 @@ static void *voice_reader_thread(void *lpParam) {
                     } else if (strncmp(line_buf, "STREAM:", 7) == 0) {
                         const char *slice = line_buf + 7;
                         audio_lock();
-                        snprintf(spoken_words_stream, sizeof(spoken_words_stream), "Sphere: %s", slice);
+                        snprintf(spoken_words_stream, sizeof(spoken_words_stream), "Spike: %s", slice);
                         renderer_set_subtitle(spoken_words_stream);
                         audio_unlock();
                     } else if (strcmp(line_buf, "SPEAK_DONE") == 0) {
@@ -1074,6 +1079,35 @@ static void clean_for_speech(const char *src, char *dst, size_t max_len) {
     int paren_chars = 0;
 
     for (size_t s = 0; src[s] && d + 1 < max_len; s++) {
+        unsigned char uc = (unsigned char)src[s];
+
+        /* Skip 4-byte UTF-8 emojis (0xF0..0xF4) */
+        if (uc >= 0xF0 && uc <= 0xF4) {
+            for (int k = 0; k < 3 && src[s + 1] && ((unsigned char)src[s + 1] & 0xC0) == 0x80; k++) {
+                s++;
+            }
+            continue;
+        }
+
+        /* Skip 3-byte UTF-8 symbols / pictographs (0xE2..0xEF) except Braille which won't appear in speech anyway */
+        if (uc >= 0xE2 && uc <= 0xEF) {
+            /* Check if degree sign or similar */
+            for (int k = 0; k < 2 && src[s + 1] && ((unsigned char)src[s + 1] & 0xC0) == 0x80; k++) {
+                s++;
+            }
+            continue;
+        }
+
+        /* Degree symbol: 0xC2 0xB0 (in UTF-8) */
+        if (uc == 0xC2 && (unsigned char)src[s + 1] == 0xB0) {
+            s++;
+            const char *deg = " degrees ";
+            for (int k = 0; deg[k] && d + 1 < max_len; k++) {
+                dst[d++] = deg[k];
+            }
+            continue;
+        }
+
         char c = src[s];
         if (c == '(') { in_paren++; paren_chars = 0; continue; }
         if (c == ')') { if (in_paren > 0) in_paren--; continue; }

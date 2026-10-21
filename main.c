@@ -151,7 +151,7 @@ static void handle_exit(void) {
     audio_stop_music();
     renderer_set_input_buffer("");
     renderer_set_state(STATE_SPEAKING);
-    renderer_set_status("Exiting SphereAI...");
+    renderer_set_status("Exiting Spike...");
     renderer_set_subtitle("see you later, bye");
     audio_speak_exit("see you later, bye");
     int wait_count = 80;
@@ -182,7 +182,13 @@ static int is_hard_exit_command(const char *lower) {
     const char *p = clean;
     while (*p && (isspace((unsigned char)*p) || *p == '"' || *p == '\'')) p++;
 
-    if (strncmp(p, "hey sphere ", 11) == 0) p += 11;
+    if (strncmp(p, "hey spike ", 10) == 0) p += 10;
+    else if (strncmp(p, "listen spike ", 13) == 0) p += 13;
+    else if (strncmp(p, "listen ", 7) == 0) p += 7;
+    else if (strncmp(p, "spike wake up ", 14) == 0) p += 14;
+    else if (strncmp(p, "wake up spike ", 14) == 0) p += 14;
+    else if (strncmp(p, "spike ", 6) == 0) p += 6;
+    else if (strncmp(p, "hey sphere ", 11) == 0) p += 11;
     else if (strncmp(p, "hi sphere ", 10) == 0) p += 10;
     else if (strncmp(p, "hello sphere ", 13) == 0) p += 13;
     else if (strncmp(p, "sphere ", 7) == 0) p += 7;
@@ -196,6 +202,9 @@ static int is_hard_exit_command(const char *lower) {
             strcmp(p, "close app") == 0 ||
             strcmp(p, "close the app") == 0 ||
             strcmp(p, "quit app") == 0 ||
+            strcmp(p, "shutdown spike") == 0 ||
+            strcmp(p, "shut down spike") == 0 ||
+            strcmp(p, "terminate spike") == 0 ||
             strcmp(p, "shutdown sphere") == 0 ||
             strcmp(p, "shut down sphere") == 0 ||
             strcmp(p, "terminate sphere") == 0 ||
@@ -216,7 +225,13 @@ static int is_farewell_command(const char *lower) {
     const char *p = clean;
     while (*p && (isspace((unsigned char)*p) || *p == '"' || *p == '\'')) p++;
 
-    if (strncmp(p, "hey sphere ", 11) == 0) p += 11;
+    if (strncmp(p, "hey spike ", 10) == 0) p += 10;
+    else if (strncmp(p, "listen spike ", 13) == 0) p += 13;
+    else if (strncmp(p, "listen ", 7) == 0) p += 7;
+    else if (strncmp(p, "spike wake up ", 14) == 0) p += 14;
+    else if (strncmp(p, "wake up spike ", 14) == 0) p += 14;
+    else if (strncmp(p, "spike ", 6) == 0) p += 6;
+    else if (strncmp(p, "hey sphere ", 11) == 0) p += 11;
     else if (strncmp(p, "hi sphere ", 10) == 0) p += 10;
     else if (strncmp(p, "hello sphere ", 13) == 0) p += 13;
     else if (strncmp(p, "sphere ", 7) == 0) p += 7;
@@ -271,10 +286,10 @@ static void strip_wake_prefix(char *text) {
     lower[len] = '\0';
 
     const char *greetings[] = {
-        "hey", "hi", "hello", "ok", "okay", "yo", "ay", "hay", "her", "here", "hear", "wake up", "the", "a"
+        "hey", "hi", "hello", "ok", "okay", "yo", "ay", "hay", "her", "here", "hear", "wake up", "listen", "the", "a"
     };
     const char *sphere_names[] = {
-        "sphere", "spear", "fear", "spare", "sphear"
+        "spike", "spik", "spyke", "sphere", "spear", "fear", "spare", "sphear"
     };
 
     const char *p = lower;
@@ -308,7 +323,12 @@ static void strip_wake_prefix(char *text) {
         }
     }
 
-    if (strcmp(lower, "hey sphere") == 0 || strcmp(lower, "sphere") == 0 ||
+    if (strcmp(lower, "hey spike") == 0 || strcmp(lower, "spike") == 0 ||
+        strcmp(lower, "spike wake up") == 0 || strcmp(lower, "wake up spike") == 0 ||
+        strcmp(lower, "listen spike") == 0 || strcmp(lower, "listen") == 0 ||
+        strcmp(lower, "hi spike") == 0 || strcmp(lower, "hello spike") == 0 ||
+        strcmp(lower, "ok spike") == 0 || strcmp(lower, "okay spike") == 0 ||
+        strcmp(lower, "hey sphere") == 0 || strcmp(lower, "sphere") == 0 ||
         strcmp(lower, "hi sphere") == 0 || strcmp(lower, "hello sphere") == 0 ||
         strcmp(lower, "ok sphere") == 0 || strcmp(lower, "okay sphere") == 0 ||
         strcmp(lower, "spear") == 0 || strcmp(lower, "hey spear") == 0 ||
@@ -376,8 +396,8 @@ static void handle_user_query(const char *raw_query) {
     if (is_farewell_command(lower_query)) {
         audio_stop_music();
         renderer_set_state(STATE_SPEAKING);
-        renderer_set_status("Standing by | Say \"Hey Sphere\" to activate");
-        const char *farewell = "Goodbye! Say Hey Sphere whenever you need me.";
+        renderer_set_status("Standing by | Say \"Hey Spike\" to activate");
+        const char *farewell = "Goodbye! Say Hey Spike whenever you need me.";
         renderer_set_subtitle(farewell);
         audio_speak(farewell);
         while (app_running && audio_is_speaking()) {
@@ -385,8 +405,8 @@ static void handle_user_query(const char *raw_query) {
         }
         audio_set_standby_mode();
         renderer_set_state(STATE_IDLE);
-        renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-        renderer_set_subtitle("Say \"Hey Sphere\" or type to wake me up!");
+        renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+        renderer_set_subtitle("Say \"Hey Spike\" or type to wake me up!");
         return;
     }
 
@@ -395,8 +415,8 @@ static void handle_user_query(const char *raw_query) {
         audio_stop_music();
         audio_set_standby_mode();
         renderer_set_state(STATE_IDLE);
-        renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-        renderer_set_subtitle("Stopped. Say \"Hey Sphere\" to wake me up.");
+        renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+        renderer_set_subtitle("Stopped. Say \"Hey Spike\" to wake me up.");
         return;
     }
 
@@ -434,8 +454,8 @@ static void handle_user_query(const char *raw_query) {
                     }
                     audio_set_standby_mode();
                     renderer_set_state(STATE_IDLE);
-                    renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-                    renderer_set_subtitle("Say \"Hey Sphere\" or type to wake me up!");
+                    renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+                    renderer_set_subtitle("Say \"Hey Spike\" or type to wake me up!");
                     return;
                 }
                 if (_kbhit()) {
@@ -460,7 +480,7 @@ static void handle_user_query(const char *raw_query) {
                     }
                     audio_set_standby_mode();
                     renderer_set_state(STATE_IDLE);
-                    renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
+                    renderer_set_status("Standby | Say \"Hey Spike\" to activate");
                     return;
                 }
                 platform_sleep(15);
@@ -471,7 +491,7 @@ static void handle_user_query(const char *raw_query) {
             snprintf(status_music, sizeof(status_music), "Playing Full Song | %s - %s", track.track_name, track.artist_name);
             renderer_set_status(status_music);
             char sub_music[512];
-            snprintf(sub_music, sizeof(sub_music), "Playing: \"%s\" by %s (Say \"stop\" or \"Hey Sphere\" to interrupt)",
+            snprintf(sub_music, sizeof(sub_music), "Playing: \"%s\" by %s (Say \"stop\" or \"Hey Spike\" to interrupt)",
                      track.track_name, track.artist_name);
             renderer_set_subtitle(sub_music);
 
@@ -497,8 +517,8 @@ static void handle_user_query(const char *raw_query) {
                     }
                     audio_set_standby_mode();
                     renderer_set_state(STATE_IDLE);
-                    renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-                    renderer_set_subtitle("Music stopped. Say \"Hey Sphere\" or type to wake me up.");
+                    renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+                    renderer_set_subtitle("Music stopped. Say \"Hey Spike\" or type to wake me up.");
                     return;
                 }
                 if (_kbhit()) {
@@ -523,8 +543,8 @@ static void handle_user_query(const char *raw_query) {
                     }
                     audio_set_standby_mode();
                     renderer_set_state(STATE_IDLE);
-                    renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-                    renderer_set_subtitle("Music stopped. Say \"Hey Sphere\" or type to wake me up.");
+                    renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+                    renderer_set_subtitle("Music stopped. Say \"Hey Spike\" or type to wake me up.");
                     return;
                 }
                 platform_sleep(25);
@@ -533,8 +553,8 @@ static void handle_user_query(const char *raw_query) {
             audio_stop_music();
             audio_set_standby_mode();
             renderer_set_state(STATE_IDLE);
-            renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-            renderer_set_subtitle("Music ended. Say \"Hey Sphere\" to wake me up.");
+            renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+            renderer_set_subtitle("Music ended. Say \"Hey Spike\" to wake me up.");
             return;
         } else {
             renderer_set_state(STATE_SPEAKING);
@@ -560,8 +580,8 @@ static void handle_user_query(const char *raw_query) {
                     }
                     audio_set_standby_mode();
                     renderer_set_state(STATE_IDLE);
-                    renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-                    renderer_set_subtitle("Stopped. Say \"Hey Sphere\" or type to wake me up.");
+                    renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+                    renderer_set_subtitle("Stopped. Say \"Hey Spike\" or type to wake me up.");
                     return;
                 }
                 if (_kbhit()) {
@@ -586,14 +606,14 @@ static void handle_user_query(const char *raw_query) {
                     }
                     audio_set_standby_mode();
                     renderer_set_state(STATE_IDLE);
-                    renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
+                    renderer_set_status("Standby | Say \"Hey Spike\" to activate");
                     return;
                 }
                 platform_sleep(15);
             }
             audio_set_standby_mode();
             renderer_set_state(STATE_IDLE);
-            renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
+            renderer_set_status("Standby | Say \"Hey Spike\" to activate");
             return;
         }
     }
@@ -620,7 +640,7 @@ static void handle_user_query(const char *raw_query) {
     }
 
     renderer_set_state(STATE_SPEAKING);
-    renderer_set_status("Speaking response... (Say \"Hey Sphere\" or \"stop\" to interrupt)");
+    renderer_set_status("Speaking response... (Say \"Hey Spike\" or \"stop\" to interrupt)");
     renderer_set_subtitle(response);
 
     audio_speak(response);
@@ -659,8 +679,8 @@ static void handle_user_query(const char *raw_query) {
             } else {
                 audio_set_standby_mode();
                 renderer_set_state(STATE_IDLE);
-                renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-                renderer_set_subtitle("Stopped. Say \"Hey Sphere\" or type to wake me up.");
+                renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+                renderer_set_subtitle("Stopped. Say \"Hey Spike\" or type to wake me up.");
                 return;
             }
         }
@@ -696,8 +716,8 @@ static void handle_user_query(const char *raw_query) {
 
             audio_set_standby_mode();
             renderer_set_state(STATE_IDLE);
-            renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-            renderer_set_subtitle("Stopped. Say \"Hey Sphere\" or type to wake me up.");
+            renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+            renderer_set_subtitle("Stopped. Say \"Hey Spike\" or type to wake me up.");
             return;
         }
         platform_sleep(15);
@@ -705,7 +725,7 @@ static void handle_user_query(const char *raw_query) {
 
     audio_set_standby_mode();
     renderer_set_state(STATE_IDLE);
-    renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
+    renderer_set_status("Standby | Say \"Hey Spike\" to activate");
 }
 
 int main(void) {
@@ -728,8 +748,8 @@ int main(void) {
 #endif
 
     renderer_set_state(STATE_IDLE);
-    renderer_set_status("Standby | Say \"Hey Sphere\" to wake me up!");
-    renderer_set_subtitle("Say \"Hey Sphere\" or press Space to activate | 'q' or 'exit' to quit");
+    renderer_set_status("Standby | Say \"Hey Spike\" to wake me up!");
+    renderer_set_subtitle("Say \"Hey Spike\" or press Space to activate | 'q' or 'exit' to quit");
 
     int is_pipe = 0;
 #ifdef _WIN32
@@ -752,7 +772,7 @@ int main(void) {
             break;
         }
     } else {
-        audio_speak("Sphere AI online. Say Hey Sphere to activate.");
+        audio_speak("Spike online. Say Hey Spike to activate.");
         int start_in_listening = 0;
         while (app_running) {
             if (audio_check_exit_detected()) { handle_exit(); break; }
@@ -783,8 +803,8 @@ int main(void) {
         } else {
             audio_set_standby_mode();
             renderer_set_state(STATE_IDLE);
-            renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-            renderer_set_subtitle("Say \"Hey Sphere\" or type to wake me up! (Or 'exit')");
+            renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+            renderer_set_subtitle("Say \"Hey Spike\" or type to wake me up! (Or 'exit')");
         }
 
         char query_buf[512] = {0};
@@ -853,8 +873,8 @@ int main(void) {
                                 renderer_set_input_buffer("");
                                 renderer_set_state(STATE_IDLE);
                                 audio_set_standby_mode();
-                                renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-                                renderer_set_subtitle("Say \"Hey Sphere\" or type to wake me up! (Or 'exit')");
+                                renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+                                renderer_set_subtitle("Say \"Hey Spike\" or type to wake me up! (Or 'exit')");
                                 break;
                             }
                         } else if (c == 10 || c == 13) {
@@ -870,8 +890,8 @@ int main(void) {
                                 renderer_set_input_buffer("");
                                 renderer_set_state(STATE_IDLE);
                                 audio_set_standby_mode();
-                                renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-                                renderer_set_subtitle("Standby. Say \"Hey Sphere\" or type to wake me up.");
+                                renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+                                renderer_set_subtitle("Standby. Say \"Hey Spike\" or type to wake me up.");
                                 break;
                             }
                         } else if (c == 8 || c == 127) {
@@ -912,8 +932,8 @@ int main(void) {
 
                     if (typed_len == 0 && audio_check_timeout_detected()) {
                         renderer_set_state(STATE_IDLE);
-                        renderer_set_status("Standby | Say \"Hey Sphere\" to activate");
-                        renderer_set_subtitle("Listening timed out. Say \"Hey Sphere\" or type to wake me up.");
+                        renderer_set_status("Standby | Say \"Hey Spike\" to activate");
+                        renderer_set_subtitle("Listening timed out. Say \"Hey Spike\" or type to wake me up.");
                         audio_set_standby_mode();
                         break;
                     }

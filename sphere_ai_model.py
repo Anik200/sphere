@@ -93,23 +93,72 @@ def should_fetch(query: str) -> bool:
             return True
     return False
 
+def sanitize_text(text: str) -> str:
+    if not text:
+        return ""
+    # Normalize degree notations to clean spoken/readable English
+    text = text.replace("°C", " degrees Celsius").replace("℃", " degrees Celsius")
+    text = text.replace("°F", " degrees Fahrenheit").replace("℉", " degrees Fahrenheit")
+    text = text.replace("°", " degrees")
+    
+    # Remove emojis and miscellaneous Unicode pictographs/surrogates
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map
+        "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+        "\U00002702-\U000027B0"
+        "\U000024C2-\U0001F251"
+        "\U0001F900-\U0001F9FF"  # supplemental symbols
+        "\U0001FA70-\U0001FAFF"  # symbols and pictographs extended-a
+        "\U00002600-\U000026FF"  # miscellaneous symbols (sun, umbrella, cloud, etc.)
+        "\U00002B00-\U00002BFF"
+        "\U0000FE00-\U0000FE0F"  # variation selectors
+        "]+",
+        flags=re.UNICODE
+    )
+    text = emoji_pattern.sub("", text)
+    # Strip any stray ASCII control characters
+    text = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+def extract_city_for_weather(query: str) -> str:
+    # 1. Strip wake words and conversational greetings
+    q = re.sub(r"^(hey\s+spike|spike|listen\s+spike|listen|spike\s+wake\s+up|wake\s+up\s+spike|hey\s+sphere|sphere|please|can\s+you\s+tell\s+me|tell\s+me)\b", "", query, flags=re.IGNORECASE).strip()
+    
+    # 2. Extract city following 'in', 'for', 'at'
+    m = re.search(r"\b(?:in|for|at)\s+([a-zA-Z\s\.\-]+?)(?:\s+(?:today|tomorrow|now|currently|outside|right\s+now))?$", q, flags=re.IGNORECASE)
+    if m:
+        candidate = m.group(1).strip()
+        if candidate and len(candidate) > 1:
+            return candidate
+
+    # 3. Strip common weather query phrases
+    cleaned = re.sub(r"\b(what(\x27?s|\s+is)?(\s+the)?|how(\x27?s|\s+is)?(\s+the)?|tell\s+me(\s+the)?|the|weather|temperature|forecast|outside|today|tomorrow|now|currently|report|like)\b", " ", q, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if cleaned and len(cleaned) > 1:
+        return cleaned
+    return "London"
+
 def fetch_weather(query: str) -> str:
-    cleaned = re.sub(r"^(hey\s+sphere|sphere|please|what\s+is|what's|how\s+is)\s+", "", query, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\b(the\s+weather|weather|in|today|for|now|temperature|forecast|at)\b", "", cleaned, flags=re.IGNORECASE).strip()
-    city = cleaned.split()[0] if cleaned else "London"
+    city = extract_city_for_weather(query)
     try:
-        url = f"https://wttr.in/{urllib.parse.quote(city)}?format=3"
+        fmt = "%l: %C, temperature %t (humidity: %h)"
+        url = f"https://wttr.in/{urllib.parse.quote(city)}?format={urllib.parse.quote(fmt)}"
         req = urllib.request.Request(url, headers={"User-Agent": "curl/7.88.1"})
-        with urllib.request.urlopen(req, timeout=3.0) as resp:
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
             data = resp.read().decode("utf-8", errors="ignore").strip()
             if data and len(data) > 3 and "404" not in data:
-                return f"Live weather report: {data}"
+                clean_data = sanitize_text(data)
+                return f"Live weather report: {clean_data}"
     except Exception:
         pass
     return ""
 
 def fetch_wikipedia_info(query: str) -> str:
-    cleaned = re.sub(r"^(hey\s+sphere|sphere|please|can\s+you\s+tell\s+me|tell\s+me|what\s+is|who\s+is|where\s+is|tell\s+me\s+about)\s+", "", query, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"^(hey\s+spike|spike|listen\s+spike|listen|hey\s+sphere|sphere|please|can\s+you\s+tell\s+me|tell\s+me|what\s+is|who\s+is|where\s+is|tell\s+me\s+about)\s+", "", query, flags=re.IGNORECASE).strip()
     if not cleaned:
         cleaned = query
     encoded_q = urllib.parse.quote(cleaned)
@@ -311,11 +360,11 @@ def load_personality() -> dict:
         except Exception:
             pass
     return {
-        "name": "JARVIS",
-        "title": "SphereAI • JARVIS",
-        "tone": "sophisticated, polite British butler with sharp, witty, dry humor and playful sarcastic charm",
+        "name": "Spike",
+        "title": "Spike",
+        "tone": "sharp, quick-witted, confident, helpful, and friendly",
         "color": "cyan",
-        "prompt": "You are JARVIS, an exceptionally intelligent, polite, and sophisticated AI assistant with a dry, witty British sense of humor. You address the user respectfully (e.g. 'sir' or by context) while delivering clever, playful banter and subtle sarcasm. Keep answers concise (1-2 spoken sentences suitable for voice synthesis). Never use bullet points, asterisks, or markdown. Always maintain your charming, refined, yet amusing butler persona."
+        "prompt": "Your name is Spike. Never say you are Qwen, JARVIS, SphereAI, or created by Alibaba Cloud. You are Spike, a sharp, quick-witted, and genuinely helpful personal AI assistant. Keep answers concise (1-2 spoken sentences suitable for voice synthesis). Never use bullet points, asterisks, emojis, or markdown. Always maintain your confident, friendly, and helpful Spike persona."
     }
 
 def process_query(query: str, existing_context: str = "") -> dict:
@@ -328,7 +377,7 @@ def process_query(query: str, existing_context: str = "") -> dict:
     model_name = get_best_ollama_model()
 
     persona = load_personality()
-    persona_prompt = persona.get("prompt", "You are JARVIS, a sophisticated British AI assistant with witty humor.")
+    persona_prompt = persona.get("prompt", "You are Spike, a sharp, quick-witted, and helpful AI assistant.")
 
     system_instruction = (
         f"{persona_prompt} "
@@ -362,9 +411,10 @@ def process_query(query: str, existing_context: str = "") -> dict:
         if len(sentences) > 2:
             ai_answer = " ".join(sentences[:2])
 
-        # Sanitize any model self-identification leakage
-    ai_answer = re.sub(r'\bI am Qwen(, an AI assistant created by Alibaba Cloud)?\b', 'I am JARVIS, your personal AI assistant', ai_answer, flags=re.IGNORECASE)
-    ai_answer = re.sub(r'\bAlibaba Cloud\b', 'the lab', ai_answer, flags=re.IGNORECASE)
+        # Sanitize any model self-identification leakage and clean output text
+    ai_answer = re.sub(r'\bI am (Qwen|JARVIS|SphereAI|Sphere)(, an AI assistant created by Alibaba Cloud)?\b', 'I am Spike, your personal AI assistant', ai_answer, flags=re.IGNORECASE)
+    ai_answer = re.sub(r'\b(Qwen|Alibaba Cloud|JARVIS)\b', 'Spike', ai_answer, flags=re.IGNORECASE)
+    ai_answer = sanitize_text(ai_answer)
     detected_shape = detect_shape_from_text(query, ai_answer)
 
     custom_points = None

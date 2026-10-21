@@ -27,15 +27,15 @@ EXIT_REGEX = re.compile(
     re.IGNORECASE
 )
 EXIT_WAKE_REGEX = re.compile(
-    r"^(hey\s+sphere|sphere|hi\s+sphere|hello\s+sphere)\s+(exit|quit|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later|close\s+app|shutdown|shut\s+down)$",
+    r"^(hey\s+spike|spike|listen\s+spike|listen|spike\s+wake\s+up|wake\s+up\s+spike|hey\s+sphere|sphere|hi\s+sphere|hello\s+sphere)\s+(exit|quit|goodbye|good\s+bye|bye|bye\s+bye|see\s+you\s+later|close\s+app|shutdown|shut\s+down)$",
     re.IGNORECASE
 )
 STOP_REGEX = re.compile(
-    r"^(hey\s+sphere\s+|sphere\s+)?(stop|be\s+quiet|shut\s+up|pause|cancel|stop\s+talking|stop\s+it|stop\s+music|stop\s+the\s+music)$",
+    r"^(hey\s+spike\s+|spike\s+|listen\s+spike\s+|listen\s+|spike\s+wake\s+up\s+|wake\s+up\s+spike\s+|hey\s+sphere\s+|sphere\s+)?(stop|be\s+quiet|shut\s+up|pause|cancel|stop\s+talking|stop\s+it|stop\s+music|stop\s+the\s+music)$",
     re.IGNORECASE
 )
 WAKE_REGEX = re.compile(
-    r"^(hey\s+sphere|sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere|okay\s+sphere|yo\s+sphere|hey\s+spear|spear|wake\s+up\s+sphere|wake\s+up|her\s+sphere|here\s+sphere|hey\s+fear|hey\s+spare|hay\s+sphere)(\s+(?P<q>.*))?$",
+    r"^(hey\s+spike|spike\s+wake\s+up|wake\s+up\s+spike|listen\s+spike|listen|spike|hi\s+spike|hello\s+spike|ok\s+spike|okay\s+spike|yo\s+spike|hey\s+sphere|sphere|hi\s+sphere|hello\s+sphere|ok\s+sphere|okay\s+sphere|yo\s+sphere|hey\s+spear|spear|wake\s+up\s+sphere|wake\s+up|her\s+sphere|here\s+sphere|hey\s+fear|hey\s+spare|hay\s+sphere)(\s+(?P<q>.*))?$",
     re.IGNORECASE
 )
 
@@ -308,7 +308,7 @@ def speech_recognition_worker():
                                         emit(f"INTERRUPTED:{text}")
                                         set_mode("STANDBY")
                                         continue
-                                    if any(w in text for w in ("sphere", "spear", "wake up")):
+                                    if any(w in text for w in ("spike", "listen", "sphere", "spear", "wake up")):
                                         stop_speech()
                                         stop_music()
                                         emit(f"INTERRUPTED:{text}")
